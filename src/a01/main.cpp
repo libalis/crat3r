@@ -101,6 +101,10 @@ class Assignment final {
         // TODO: Assignment 1.x
         // Destroy and free any ressources you have created.
 
+        // 1.1
+        vkDestroyBuffer(device, m_storageBuffer, nullptr);
+        vkFreeMemory(device, m_storageBufferMemory, nullptr);
+
         m_particleRenderer.deinit();
         m_app.deinit();
     }
@@ -137,6 +141,7 @@ class Assignment final {
         }
 
         const VkDeviceSize bufferSize = sizeof(Particle) * NUM_PARTICLES;
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 1.1
         // First, implement the 'createBuffer' function later in this file. Then use it to allocate a storage buffer
@@ -147,6 +152,20 @@ class Assignment final {
         // CPU-memory and copy the initial data to it. You may then unmap the memory immediately after writing to it.
         //
         // [ New functions: vkMapMemory, vkUnmapMemory ]
+
+        // create storage buffer
+        createBuffer(bufferSize,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    m_storageBuffer,
+                    m_storageBufferMemory);
+        // map buffer
+        void* ppData;
+        VK_CHECK(vkMapMemory(device, m_storageBufferMemory, 0, bufferSize, 0, &ppData));
+        // copy data
+        memcpy(ppData, particlesInit.data(), bufferSize);
+        // unmap
+        vkUnmapMemory(device, m_storageBufferMemory);
 
         // TODO: Assignment 1.2
         // Now, create a staging buffer so we can store the particle data in device local memory.
@@ -336,6 +355,8 @@ class Assignment final {
         VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags propertyFlags, VkBuffer& buffer,
         VkDeviceMemory& memory
     ) {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 1.1
         // First, create a new Vulkan buffer of the specified size and usage. Then query the memory requirements, find
         // a suitable memory type, and allocate the buffer's memory. Note that the size given by the memory
@@ -348,7 +369,33 @@ class Assignment final {
         //
         // Hint: The VkAllocationCallbacks* argument in all Vulkan calls can be nullptr.
 
-        const VkDevice device = m_app.getDevice();
+        // create buffer
+        const VkBufferCreateInfo bufferCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .size = size,
+            .usage = usage,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr
+        };
+        VK_CHECK(vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer));
+        // query memory requirements
+        VkMemoryRequirements memoryRequirements;
+        vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+        // find suitable memory type
+        const uint32_t memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, propertyFlags);
+        // allocate buffer memory
+        const VkMemoryAllocateInfo memoryAllocateInfo{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .allocationSize = memoryRequirements.size,
+            .memoryTypeIndex = memoryTypeIndex
+        };
+        VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &memory));
+        // bind buffer
+        VK_CHECK(vkBindBufferMemory(device, buffer, memory, 0));
     }
 
     void createImage(
