@@ -1,0 +1,83 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+const float TWO_PI = 6.28318530717958647692528676655900576;
+
+struct Particle {
+    vec4 pos; // xyz = position, w = total lifetime
+    vec4 vel; // xyz = velocity, w = current life
+};
+
+layout(std140, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+// TODO: Assignment 1.5
+// Uncomment the following uniform buffer binding.
+//
+// layout(binding = 1) uniform UniformBuffer {
+//     vec4 spawn; // xyz = position, w = radius
+//
+//     float lifetimeMin;
+//     float lifetimeMax;
+//
+//     float forceFieldSize;
+//     float forceFieldStrength;
+//     float dragStrength;
+//
+//     float time;
+//     float dt;
+//
+//     uint numParticles;
+// } ubo;
+
+// TODO: Assignment 1.7
+// Uncomment the following image sampler binding.
+//
+// layout(binding = 2) uniform sampler3D forceFieldSampler;
+
+float randf(inout int rng_state) {
+    rng_state = abs(1103515245 * abs(rng_state) + 12345);
+    return float(rng_state) / float(2147483647);
+}
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    // TODO: Assignment 1.5
+    // Uncomment the following lines.
+    // if (gid >= ubo.numParticles) return;
+    // int rng = int(ubo.time * 13579846.) + int(gid + 10000u) * 145;
+
+    Particle particle = particles[gid];
+    vec3 pos = particle.pos.xyz;      // current particle position in world space
+    vec3 vel = particle.vel.xyz;      // current particle velocity in world space
+    float lifetime = particle.pos.w;  // total lifetime of the particle in seconds
+    float life = particle.vel.w;      // percentage of remaining life [0, 1]
+
+    // TODO: Assignment 1.6
+    // First, reduce the particle's life. Use this particle's total lifetime and the delta time given by the
+    // uniform buffer, in a way that the life linearly transitions from one to zero over the total lifetime.
+    //
+    // Next, respawn dead particles (with a life less than zero):
+    // - Generate a random position on a sphere of radius 'ubo.spawn.w' around 'ubo.spawn.xyz'.
+    // - Apply a small random initial velocity.
+    // - Set the lifetime to a random value in the range [ubo.lifetimeMin, ubo.lifetimeMax].
+    // - Initialize the remaining life to one.
+    // You can use randf(rng) to generate a uniform random number between zero and one.
+    //
+    // Finally, update the particle's velocity, if it has not just been respawned.
+
+    // TODO: Assignment 1.8
+    // Before updating the velocity, sample the force field at the particle's location. Use the uniform
+    // 'forceFieldSize' to scale the force field and 'forceFieldStrength' to adjust its strength.
+    // Take care to transform the force field values from [0,1] to [-1,1] after sampling the texture.
+    // Then, use 'dragStrength' to apply a drag force to the particles. Finally, use the forces to update 
+    // the velocity. You may assume the mass of all particles to be one.
+
+    particle.pos.xyz = pos;
+    particle.vel.xyz = vel;
+    particle.pos.w = lifetime;
+    particle.vel.w = life;
+    particles[gid] = particle;
+}

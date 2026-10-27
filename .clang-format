@@ -1,0 +1,16 @@
+---
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 4
+ColumnLimit: 120
+AlignAfterOpenBracket: BlockIndent
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortFunctionsOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: OnePerLine
+Cpp11BracedListStyle: true
+PackConstructorInitializers: NextLineOnly
+PenaltyReturnTypeOnItsOwnLine: 1000000
+PointerAlignment: Left
