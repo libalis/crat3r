@@ -15,22 +15,22 @@ layout(std140, binding = 0) buffer ParticleBuffer {
 
 // TODO: Assignment 1.5
 // Uncomment the following uniform buffer binding.
-//
-// layout(binding = 1) uniform UniformBuffer {
-//     vec4 spawn; // xyz = position, w = radius
-//
-//     float lifetimeMin;
-//     float lifetimeMax;
-//
-//     float forceFieldSize;
-//     float forceFieldStrength;
-//     float dragStrength;
-//
-//     float time;
-//     float dt;
-//
-//     uint numParticles;
-// } ubo;
+
+layout(binding = 1) uniform UniformBuffer {
+    vec4 spawn; // xyz = position, w = radius
+
+    float lifetimeMin;
+    float lifetimeMax;
+
+    float forceFieldSize;
+    float forceFieldStrength;
+    float dragStrength;
+
+    float time;
+    float dt;
+
+    uint numParticles;
+} ubo;
 
 // TODO: Assignment 1.7
 // Uncomment the following image sampler binding.
@@ -46,8 +46,9 @@ void main() {
     uint gid = gl_GlobalInvocationID.x;
     // TODO: Assignment 1.5
     // Uncomment the following lines.
-    // if (gid >= ubo.numParticles) return;
-    // int rng = int(ubo.time * 13579846.) + int(gid + 10000u) * 145;
+
+    if (gid >= ubo.numParticles) return;
+    int rng = int(ubo.time * 13579846.) + int(gid + 10000u) * 145;
 
     Particle particle = particles[gid];
     vec3 pos = particle.pos.xyz;      // current particle position in world space
@@ -75,7 +76,7 @@ void main() {
     // Then, use 'dragStrength' to apply a drag force to the particles. Finally, use the forces to update
     // the velocity. You may assume the mass of all particles to be one.
 
-    particle.pos.xyz = pos + 0.01 * vel;
+    particle.pos.xyz = pos + ubo.dt * vel;
     particle.vel.xyz = vel;
     particle.pos.w = lifetime;
     particle.vel.w = life;

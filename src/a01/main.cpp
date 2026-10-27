@@ -114,6 +114,15 @@ class Assignment final {
         vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
         vkDestroyPipeline(device, m_pipeline, nullptr);
 
+        // 1.5
+        for (auto buffer : m_uniformBuffer) {
+            vkDestroyBuffer(device, buffer, nullptr);
+        }
+        for (auto memory : m_uniformBufferMemory) {
+            vkUnmapMemory(device, memory);
+            vkFreeMemory(device, memory, nullptr);
+        }
+
         m_particleRenderer.deinit();
         m_app.deinit();
     }
@@ -136,6 +145,12 @@ class Assignment final {
     // 1.4
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_pipeline;
+
+    // 1.5
+    const size_t m_uniformBufferSize = sizeof(UniformBufferObject);
+    std::vector<VkBuffer> m_uniformBuffer;
+    std::vector<VkDeviceMemory> m_uniformBufferMemory;
+    std::vector<void*> m_uniformBufferMemoryMap;
 
     UniformBufferObject m_ubo{};
 
@@ -225,12 +240,27 @@ class Assignment final {
 
     void createUniformBuffers() {
         const uint32_t framesInFlight = m_app.getSwapchain().getMaxFramesInFlight();
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 1.5
         // First, add storage for 'framesInFlight' uniform buffers as class members. Each buffer requires a
         // 'VkBuffer', a 'VkDeviceMemory' and a mapped 'void*'. Either create three different vectors, or create
         // a single vector of structs. Then create the buffers similar to the particle staging buffer and
         // map them to CPU-memory. The size of the buffers is 'sizeof(UniformBufferObject)'.
+
+        m_uniformBuffer.resize(framesInFlight);
+        m_uniformBufferMemory.resize(framesInFlight);
+        m_uniformBufferMemoryMap.resize(framesInFlight);
+        for (size_t i = 0; i < framesInFlight; i++) {
+            // create uniform buffers
+            createBuffer(m_uniformBufferSize,
+                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                        m_uniformBuffer[i],
+                        m_uniformBufferMemory[i]);
+            // map buffer
+            VK_CHECK(vkMapMemory(device, m_uniformBufferMemory[i], 0, m_uniformBufferSize, 0, &m_uniformBufferMemoryMap[i]));
+        }
     }
 
     void createForceFieldImage() {
@@ -283,9 +313,17 @@ class Assignment final {
         //
         // [ New functions: vkCreateDescriptorPool ]
 
+        // TODO: Assignment 1.5
+        // Now add space for 'framesInFlight' uniform buffers. Fill a second 'VkDescriptorPoolSize' and
+        // store both in a vector or array. Then update 'VkDescriptorPoolCreateInfo' accordingly.
+
         const VkDescriptorPoolSize descriptorPoolSize[]{
             {
                 .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = framesInFlight
+            },
+            {
+                .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .descriptorCount = framesInFlight
             }
         };
@@ -296,10 +334,6 @@ class Assignment final {
             .pPoolSizes = descriptorPoolSize
         };
         VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool));
-
-        // TODO: Assignment 1.5
-        // Now add space for 'framesInFlight' uniform buffers. Fill a second 'VkDescriptorPoolSize' and
-        // store both in a vector or array. Then update 'VkDescriptorPoolCreateInfo' accordingly.
 
         // TODO: Assignment 1.7
         // Now also add space for 'framesInFlight' combined image samplers for the force field image.
@@ -314,9 +348,16 @@ class Assignment final {
         //
         // [ New functions: vkCreateDescriptorSetLayout ]
 
+        // TODO: Assignment 1.5
+        // Add a second layout binding at location 1 for a uniform buffer, store both bindings in an array
+        // or vector and update 'VkDescriptorSetLayoutCreateInfo'.
+
         const VkDescriptorSetLayoutBinding descriptorSetLayoutBinding[] = {
             {
                 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr
+            },
+            {
+                1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr
             }
         };
         const VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo {
@@ -325,10 +366,6 @@ class Assignment final {
             .pBindings = descriptorSetLayoutBinding,
         };
         VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayout));
-
-        // TODO: Assignment 1.5
-        // Add a second layout binding at location 1 for a uniform buffer, store both bindings in an array
-        // or vector and update 'VkDescriptorSetLayoutCreateInfo'.
 
         // TODO: Assignment 1.7
         // Add a third binding for a combined image sampler at binding location 2.
@@ -365,9 +402,20 @@ class Assignment final {
             //
             // [ New functions: 'vkUpdateDescriptorSets' ]
 
+            // TODO: Assignment 1.5
+            // Add a second 'VkDescriptorBufferInfo' for the uniform buffer and have it reference the ith buffer.
+            // Then, add a second 'VkWriteDescriptorSet' for the uniform buffer, storing both in an array or vector
+            //
+            // and update 'vkUpdateDescriptorSets'.
+
             const VkDescriptorBufferInfo descriptorBufferInfo[]{
                 {
                     .buffer = m_storageBuffer,
+                    .offset = 0,
+                    .range = VK_WHOLE_SIZE
+                },
+                {
+                    .buffer = m_uniformBuffer[i],
                     .offset = 0,
                     .range = VK_WHOLE_SIZE
                 }
@@ -384,15 +432,21 @@ class Assignment final {
                     .pImageInfo = nullptr,
                     .pBufferInfo = &descriptorBufferInfo[0],
                     .pTexelBufferView = nullptr
+                },
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .pNext = nullptr,
+                    .dstSet = m_descriptorSets[i],
+                    .dstBinding = 1,
+                    .dstArrayElement = 0,
+                    .descriptorCount = framesInFlight,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pImageInfo = nullptr,
+                    .pBufferInfo = &descriptorBufferInfo[1],
+                    .pTexelBufferView = nullptr
                 }
             };
             vkUpdateDescriptorSets(device, sizeof(writeDescriptorSet) / sizeof(writeDescriptorSet[0]), writeDescriptorSet, 0, nullptr);
-
-            // TODO: Assignment 1.5
-            // Add a second 'VkDescriptorBufferInfo' for the uniform buffer and have it reference the ith buffer.
-            // Then, add a second 'VkWriteDescriptorSet' for the uniform buffer, storing both in an array or vector
-            //
-            // and update 'vkUpdateDescriptorSets'.
 
             // TODO: Assignment 1.7
             // Add a 'VkDescriptorImageInfo' and have it reference the image view and sampler.
@@ -497,6 +551,8 @@ class Assignment final {
 
         // TODO: Assignment 1.5
         // Copy 'm_ubo' to the mapped uniform buffer of the current frame.
+
+        memcpy(m_uniformBufferMemoryMap[currentFrame], reinterpret_cast<void*>(&m_ubo), m_uniformBufferSize);
     }
 
     //--------------------------------------------------------------------------------------------------
