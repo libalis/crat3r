@@ -72,10 +72,10 @@ void main() {
     // Before updating the velocity, sample the force field at the particle's location. Use the uniform
     // 'forceFieldSize' to scale the force field and 'forceFieldStrength' to adjust its strength.
     // Take care to transform the force field values from [0,1] to [-1,1] after sampling the texture.
-    // Then, use 'dragStrength' to apply a drag force to the particles. Finally, use the forces to update 
+    // Then, use 'dragStrength' to apply a drag force to the particles. Finally, use the forces to update
     // the velocity. You may assume the mass of all particles to be one.
 
-    particle.pos.xyz = pos;
+    particle.pos.xyz = pos + 0.01 * vel;
     particle.vel.xyz = vel;
     particle.pos.w = lifetime;
     particle.vel.w = life;
