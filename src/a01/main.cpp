@@ -153,19 +153,21 @@ class Assignment final {
         //
         // [ New functions: vkMapMemory, vkUnmapMemory ]
 
-        // create storage buffer
+        // create staging buffer
+        VkBuffer m_stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory m_stagingBufferMemory = VK_NULL_HANDLE;
         createBuffer(bufferSize,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                    m_storageBuffer,
-                    m_storageBufferMemory);
+                    m_stagingBuffer,
+                    m_stagingBufferMemory);
         // map buffer
         void* ppData;
-        VK_CHECK(vkMapMemory(device, m_storageBufferMemory, 0, bufferSize, 0, &ppData));
+        VK_CHECK(vkMapMemory(device, m_stagingBufferMemory, 0, bufferSize, 0, &ppData));
         // copy data
         memcpy(ppData, particlesInit.data(), bufferSize);
         // unmap
-        vkUnmapMemory(device, m_storageBufferMemory);
+        vkUnmapMemory(device, m_stagingBufferMemory);
 
         // TODO: Assignment 1.2
         // Now, create a staging buffer so we can store the particle data in device local memory.
@@ -181,6 +183,26 @@ class Assignment final {
         // VK_CHECK(m_app.executeSingleTimeCommand([&](VkCommandBuffer commandBuffer) {
         //    ...
         // }));
+
+        // create storage buffer
+        // problem we encountered: forgot VK_BUFFER_USAGE_VERTEX_BUFFER_BIT -> segfault
+        createBuffer(bufferSize,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    m_storageBuffer,
+                    m_storageBufferMemory);
+        // copy staging -> storage
+        VK_CHECK(m_app.executeSingleTimeCommand([&](VkCommandBuffer commandBuffer) {
+            const VkBufferCopy bufferCopy{
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = bufferSize
+            };
+            vkCmdCopyBuffer(commandBuffer, m_stagingBuffer, m_storageBuffer, 1, &bufferCopy);
+        }));
+        // free staging buffer
+        vkDestroyBuffer(device, m_stagingBuffer, nullptr);
+        vkFreeMemory(device, m_stagingBufferMemory, nullptr);
     }
 
     void createUniformBuffers() {
