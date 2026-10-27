@@ -69,6 +69,21 @@ void main() {
     //
     // Finally, update the particle's velocity, if it has not just been respawned.
 
+    lifetime += ubo.dt;
+    life = 1 - (lifetime - ubo.lifetimeMin) / (ubo.lifetimeMax - ubo.lifetimeMin);
+    if (life < 0) {
+        // sample z uniform in [-1, 1] and phi uniform in [0, TWO_PI]
+        float z = 2 * randf(rng) - 1;  // z
+        float phi = randf(rng) * TWO_PI;  // phi
+        // sample dir via uniform sphere sampling
+        vec3 dir = vec3(sqrt(1 - z * z) * cos(phi), sqrt(1 - z * z) * sin(phi), z);
+        // set pos on sphere with radius 'ubo.spawn.w'
+        pos = ubo.spawn.xyz + ubo.spawn.w * dir;
+        vel = 0.1 * normalize(vec3(2 * randf(rng) - 1, 2 * randf(rng) - 1, 2 * randf(rng) - 1));
+        lifetime = ubo.lifetimeMin + randf(rng) * (ubo.lifetimeMax - ubo.lifetimeMin);
+        life = 1;
+    }
+
     // TODO: Assignment 1.8
     // Before updating the velocity, sample the force field at the particle's location. Use the uniform
     // 'forceFieldSize' to scale the force field and 'forceFieldStrength' to adjust its strength.
