@@ -123,6 +123,12 @@ class Assignment final {
             vkFreeMemory(device, memory, nullptr);
         }
 
+        // 1.7
+        vkDestroyImage(device, m_image, nullptr);
+        vkFreeMemory(device, m_imageMemory, nullptr);
+        vkDestroyImageView(device, m_imageView, nullptr);
+        vkDestroySampler(device, m_sampler, nullptr);
+
         m_particleRenderer.deinit();
         m_app.deinit();
     }
@@ -151,6 +157,12 @@ class Assignment final {
     std::vector<VkBuffer> m_uniformBuffer;
     std::vector<VkDeviceMemory> m_uniformBufferMemory;
     std::vector<void*> m_uniformBufferMemoryMap;
+
+    // 1.7
+    VkImage m_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_imageMemory = VK_NULL_HANDLE;
+    VkImageView m_imageView = VK_NULL_HANDLE;
+    VkSampler m_sampler = VK_NULL_HANDLE;
 
     UniformBufferObject m_ubo{};
 
@@ -268,6 +280,7 @@ class Assignment final {
         const VkDeviceSize imageSize = static_cast<VkDeviceSize>(vectorfield.size());
         const VkExtent3D imageExtent = {.width = 4, .height = 4, .depth = 4};
         const VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        const VkDevice device = m_app.getDevice();
 
         assert(imageSize == imageExtent.width * imageExtent.height * imageExtent.depth * 4);
 
@@ -282,24 +295,129 @@ class Assignment final {
         // shader reading. Remember to free the staging buffer!
         //
         // [ New functions: vkCmdCopyBufferToImage ]
+
+        // create staging buffer
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+        createBuffer(imageSize,
+                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    stagingBuffer,
+                    stagingBufferMemory);
+        // map buffer
+        void* ppData;
+        VK_CHECK(vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &ppData));
+        // copy data
+        memcpy(ppData, vectorfield.data(), imageSize);
+        // unmap
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        // createImage
+        createImage(VK_IMAGE_TYPE_3D,
+                    imageFormat,
+                    imageExtent,
+                    VK_IMAGE_TILING_OPTIMAL,
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    m_image,
+                    m_imageMemory);
+
+        VK_CHECK(m_app.executeSingleTimeCommand([&](VkCommandBuffer commandBuffer) {
+            // transition the image layout from undefined to dst-optimal
+            transitionImageLayout(commandBuffer, m_image, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+            // copy staging -> image
+            VkImageSubresourceLayers imageSubresourceLayers{
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            };
+            const VkBufferImageCopy bufferImageCopy{
+                .bufferOffset = 0,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource = imageSubresourceLayers,
+                .imageOffset = {0, 0, 0},
+                .imageExtent = imageExtent,
+            };
+            vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferImageCopy);
+
+            // transition the image layout from dst-optimal to shader-read-optimal
+            transitionImageLayout(commandBuffer, m_image, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }));
+
+        // free staging buffer
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
     void createForceFieldImageView() {
         const VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 1.7
         // Create a 3D image view of the force field image. Remember to set the both 'layerCount' and
         // 'levelCount' fields of the 'subresourceRange' in the create info to one.
         //
         // [ New functions: vkCreateImageView ]
+
+        VkComponentMapping componentMapping{
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY
+        };
+        VkImageSubresourceRange imageSubresourceRange{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        };
+        VkImageViewCreateInfo imageViewCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .image = m_image,
+            .viewType = VK_IMAGE_VIEW_TYPE_3D,
+            .format = imageFormat,
+            .components = componentMapping,
+            .subresourceRange = imageSubresourceRange
+        };
+        VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &m_imageView));
     }
 
     void createForceFieldImageSampler() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 1.7
         // Create a sampler that linearly samples the force field image. Apart from the minification and magnification
         // settings, you may set most of the other fields of the sampler create info to the default values.
         //
         // [ New functions: vkCreateSampler ]
+
+        VkSamplerCreateInfo samplerCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .mipLodBias = 0.0f,
+            .anisotropyEnable = VK_FALSE,
+            .maxAnisotropy = 0.0f,
+            .compareEnable = VK_FALSE,
+            .compareOp = VK_COMPARE_OP_NEVER,
+            .minLod = 0.0f,
+            .maxLod = VK_LOD_CLAMP_NONE,
+            .borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+            .unnormalizedCoordinates = VK_FALSE
+        };
+        VK_CHECK(vkCreateSampler(device, &samplerCreateInfo, nullptr, &m_sampler));
     }
 
     void createDescriptorPool() {
@@ -317,6 +435,9 @@ class Assignment final {
         // Now add space for 'framesInFlight' uniform buffers. Fill a second 'VkDescriptorPoolSize' and
         // store both in a vector or array. Then update 'VkDescriptorPoolCreateInfo' accordingly.
 
+        // TODO: Assignment 1.7
+        // Now also add space for 'framesInFlight' combined image samplers for the force field image.
+
         const VkDescriptorPoolSize descriptorPoolSize[]{
             {
                 .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -324,6 +445,10 @@ class Assignment final {
             },
             {
                 .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = framesInFlight
+            },
+            {
+                .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .descriptorCount = framesInFlight
             }
         };
@@ -334,9 +459,6 @@ class Assignment final {
             .pPoolSizes = descriptorPoolSize
         };
         VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool));
-
-        // TODO: Assignment 1.7
-        // Now also add space for 'framesInFlight' combined image samplers for the force field image.
     }
 
     void createDescriptorSetLayout() {
@@ -352,12 +474,18 @@ class Assignment final {
         // Add a second layout binding at location 1 for a uniform buffer, store both bindings in an array
         // or vector and update 'VkDescriptorSetLayoutCreateInfo'.
 
+        // TODO: Assignment 1.7
+        // Add a third binding for a combined image sampler at binding location 2.
+
         const VkDescriptorSetLayoutBinding descriptorSetLayoutBinding[] = {
             {
                 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr
             },
             {
                 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr
+            },
+            {
+                2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr
             }
         };
         const VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo {
@@ -366,9 +494,6 @@ class Assignment final {
             .pBindings = descriptorSetLayoutBinding,
         };
         VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayout));
-
-        // TODO: Assignment 1.7
-        // Add a third binding for a combined image sampler at binding location 2.
     }
 
     void createDescriptorSets() {
@@ -408,6 +533,10 @@ class Assignment final {
             //
             // and update 'vkUpdateDescriptorSets'.
 
+            // TODO: Assignment 1.7
+            // Add a 'VkDescriptorImageInfo' and have it reference the image view and sampler.
+            // Then, add a third 'VkWriteDescriptorSet' for the image.
+
             const VkDescriptorBufferInfo descriptorBufferInfo[]{
                 {
                     .buffer = m_storageBuffer,
@@ -420,6 +549,13 @@ class Assignment final {
                     .range = VK_WHOLE_SIZE
                 }
             };
+            const VkDescriptorImageInfo descriptorImageInfo[]{
+                {
+                    .sampler = m_sampler,
+                    .imageView = m_imageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                }
+            };
             const VkWriteDescriptorSet writeDescriptorSet[]{
                 {
                     .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -427,7 +563,7 @@ class Assignment final {
                     .dstSet = m_descriptorSets[i],
                     .dstBinding = 0,
                     .dstArrayElement = 0,
-                    .descriptorCount = framesInFlight,
+                    .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                     .pImageInfo = nullptr,
                     .pBufferInfo = &descriptorBufferInfo[0],
@@ -439,18 +575,26 @@ class Assignment final {
                     .dstSet = m_descriptorSets[i],
                     .dstBinding = 1,
                     .dstArrayElement = 0,
-                    .descriptorCount = framesInFlight,
+                    .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                     .pImageInfo = nullptr,
                     .pBufferInfo = &descriptorBufferInfo[1],
                     .pTexelBufferView = nullptr
+                },
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .pNext = nullptr,
+                    .dstSet = m_descriptorSets[i],
+                    .dstBinding = 2,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .pImageInfo = &descriptorImageInfo[0],
+                    .pBufferInfo = nullptr,
+                    .pTexelBufferView = nullptr
                 }
             };
             vkUpdateDescriptorSets(device, sizeof(writeDescriptorSet) / sizeof(writeDescriptorSet[0]), writeDescriptorSet, 0, nullptr);
-
-            // TODO: Assignment 1.7
-            // Add a 'VkDescriptorImageInfo' and have it reference the image view and sampler.
-            // Then, add a third 'VkWriteDescriptorSet' for the image.
         }
     }
 
@@ -622,12 +766,48 @@ class Assignment final {
         VkImageType imageType, VkFormat format, VkExtent3D extent, VkImageTiling tiling, VkImageUsageFlags usage,
         VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory
     ) {
+        const VkDevice device = m_app.getDevice();
         // TODO: Assignment 1.7
         // Implement analogously to 'createBuffer'. As we will not be implementing mip-mapping here, set the
         // number of mip levels to one. Multisampling is also not required. The initial layout of the image
         // should be 'VK_IMAGE_LAYOUT_UNDEFINED'.
         //
         // [ New functions: vkCreateImage, vkGetImageMemoryRequirements, vkBindImageMemory ]
+
+        // create image
+        VkImageCreateInfo imageCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .imageType = imageType,
+            .format = format,
+            .extent = extent,
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = tiling,
+            .usage = usage,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
+        VK_CHECK(vkCreateImage(device, &imageCreateInfo, nullptr, &image));
+        // query image memory requirements
+        VkMemoryRequirements memoryRequirements;
+        vkGetImageMemoryRequirements(device, image, &memoryRequirements);
+        // find suitable memory type
+        const uint32_t memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, properties);
+        // allocate image memory
+        const VkMemoryAllocateInfo memoryAllocateInfo{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .allocationSize = memoryRequirements.size,
+            .memoryTypeIndex = memoryTypeIndex
+        };
+        VK_CHECK(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &imageMemory));
+        // bind image
+        VK_CHECK(vkBindImageMemory(device, image, imageMemory, 0));
     }
 
     void transitionImageLayout(

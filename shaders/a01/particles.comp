@@ -34,8 +34,8 @@ layout(binding = 1) uniform UniformBuffer {
 
 // TODO: Assignment 1.7
 // Uncomment the following image sampler binding.
-//
-// layout(binding = 2) uniform sampler3D forceFieldSampler;
+
+layout(binding = 2) uniform sampler3D forceFieldSampler;
 
 float randf(inout int rng_state) {
     rng_state = abs(1103515245 * abs(rng_state) + 12345);
