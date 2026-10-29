@@ -69,8 +69,7 @@ void main() {
     //
     // Finally, update the particle's velocity, if it has not just been respawned.
 
-    lifetime += ubo.dt;
-    life = 1 - (lifetime - ubo.lifetimeMin) / (ubo.lifetimeMax - ubo.lifetimeMin);
+    life -= ubo.dt / lifetime;
     if (life < 0) {
         // sample z uniform in [-1, 1] and phi uniform in [0, TWO_PI]
         float z = 2 * randf(rng) - 1;  // z
@@ -79,7 +78,7 @@ void main() {
         vec3 dir = vec3(sqrt(1 - z * z) * cos(phi), sqrt(1 - z * z) * sin(phi), z);
         // set pos on sphere with radius 'ubo.spawn.w'
         pos = ubo.spawn.xyz + ubo.spawn.w * dir;
-        vel = 0.1 * normalize(vec3(2 * randf(rng) - 1, 2 * randf(rng) - 1, 2 * randf(rng) - 1));
+        vel = 0.1 * vec3(2 * randf(rng) - 1, 2 * randf(rng) - 1, 2 * randf(rng) - 1);
         lifetime = ubo.lifetimeMin + randf(rng) * (ubo.lifetimeMax - ubo.lifetimeMin);
         life = 1;
     }
@@ -91,8 +90,17 @@ void main() {
     // Then, use 'dragStrength' to apply a drag force to the particles. Finally, use the forces to update
     // the velocity. You may assume the mass of all particles to be one.
 
+    // sample
+    vec3 forceField = texture(forceFieldSampler, pos / ubo.forceFieldSize).xyz;
+    // [0,1] -> [-1,1]
+    forceField = 2 * forceField - 1;
+    // adjust strength
+    forceField *= ubo.forceFieldStrength;
+
+    vec3 dragForce = -vel * ubo.dragStrength;
+
     particle.pos.xyz = pos + ubo.dt * vel;
-    particle.vel.xyz = vel;
+    particle.vel.xyz = vel + ubo.dt * (forceField + dragForce);
     particle.pos.w = lifetime;
     particle.vel.w = life;
     particles[gid] = particle;
