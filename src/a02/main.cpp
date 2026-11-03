@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <volk.h>
 #include <vulkan/vulkan_core.h>
 
@@ -113,6 +114,12 @@ class Assignment final {
         // TODO: Assignment 2.x
         // Destroy and free any ressources you have created.
 
+        // 2.1
+        vkDestroyRenderPass(device, m_renderPass, nullptr);
+        vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
+        vkDestroyPipeline(device, m_pipeline, nullptr);
+        vkDestroyFramebuffer(device, m_framebuffer, nullptr);
+
         m_app.deinit();
     }
 
@@ -123,11 +130,18 @@ class Assignment final {
     // TODO: Assignment 2.x
     // Add any other necessary class members here.
 
+    // 2.1
+    VkRenderPass m_renderPass;
+    VkPipelineLayout m_pipelineLayout;
+    VkPipeline m_pipeline;
+    VkFramebuffer m_framebuffer;
+
   private:
     //--------------------------------------------------------------------------------------------------
 
     void createRenderPass() {
         const VkFormat targetFormat = m_app.getRenderTargetFormat();
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.1
         // First, create a render pass for our rasterizer. This creation info struct references a few other
@@ -153,6 +167,54 @@ class Assignment final {
         //
         // [ New functions: vkCreateRenderPass ]
 
+        const std::array attachments = {
+            VkAttachmentDescription{
+                .format = targetFormat,
+                .samples = VK_SAMPLE_COUNT_1_BIT,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            }
+        };
+
+        const VkAttachmentReference colorAttachmentReference{
+            .attachment = 0,
+            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        };
+
+        const VkSubpassDescription subpass{
+            .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachmentReference,
+            .pDepthStencilAttachment = nullptr
+        };
+
+        const std::array dependencies = {
+            VkSubpassDependency{
+                .srcSubpass = VK_SUBPASS_EXTERNAL,
+                .dstSubpass = 0,
+                .srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+            }
+        };
+
+        const VkRenderPassCreateInfo renderPassCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .attachmentCount = attachments.size(),
+            .pAttachments = attachments.data(),
+            .subpassCount = 1,
+            .pSubpasses = &subpass,
+            .dependencyCount = dependencies.size(),
+            .pDependencies = dependencies.data()
+        };
+
+        VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &m_renderPass));
+
         // TODO: Assignment 2.7
         // Add a second attachment description and attachment reference and subpass dependency
         // for the depth attachment.
@@ -167,10 +229,24 @@ class Assignment final {
     }
 
     void createPipelineLayout() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.1
         // Create a simple pipeline layout for zero descriptor sets and push constant ranges.
         //
         // [ New functions: vkCreatePipelineLayout ]
+
+        const VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .setLayoutCount = 0,
+            .pSetLayouts = nullptr,
+            .pushConstantRangeCount = 0,
+            .pPushConstantRanges = nullptr
+        };
+
+        VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayout));
 
         // TODO: Assignment 2.4
         // Add a push constant range for the vertex shader using the 'VertexPushConstants' struct.
@@ -193,11 +269,13 @@ class Assignment final {
     }
 
     void createPipeline() {
+        const VkDevice device = m_app.getDevice();
+
         const auto vertShaderCode = Fs::readFile("shaders/a02/simple.vert.spv");
         const auto fragShaderCode = Fs::readFile("shaders/a02/simple.frag.spv");
 
-        const VkShaderModule vertShaderModule = createShaderModule(m_app.getDevice(), vertShaderCode);
-        const VkShaderModule fragShaderModule = createShaderModule(m_app.getDevice(), fragShaderCode);
+        const VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
+        const VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode);
 
         // TODO: Assignment 2.1
         // Now it is time to create the graphics pipeline. The 'VkGraphicsPipelineCreateInfo' references several
@@ -220,6 +298,127 @@ class Assignment final {
         // the validation layers. The pipeline cache can be set to 'VK_NULL_HANDLE' again.
         //
         // [ New functions: vkCreateGraphicsPipelines ]
+
+        const std::array stages{
+            VkPipelineShaderStageCreateInfo{
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                .module = vertShaderModule,
+                .pName = "main"
+            },
+            VkPipelineShaderStageCreateInfo{
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .module = fragShaderModule,
+                .pName = "main"
+            }
+        };
+
+        const VkPipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .vertexBindingDescriptionCount = 0,
+            .pVertexBindingDescriptions = nullptr,
+            .vertexAttributeDescriptionCount = 0,
+            .pVertexAttributeDescriptions = nullptr
+        };
+
+        const VkPipelineInputAssemblyStateCreateInfo pipelineInputAssemblyStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .primitiveRestartEnable = VK_FALSE
+        };
+
+        const VkPipelineViewportStateCreateInfo pipelineViewportStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .viewportCount = 1,
+            .pViewports = nullptr,
+            .scissorCount = 1,
+            .pScissors = nullptr
+        };
+
+        const VkPipelineRasterizationStateCreateInfo pipelineRasterizationStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .depthClampEnable = VK_FALSE,
+            .rasterizerDiscardEnable = VK_FALSE,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_NONE,
+            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE
+        };
+
+        const VkPipelineMultisampleStateCreateInfo pipelineMultisampleStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            .sampleShadingEnable = VK_FALSE,
+            .minSampleShading = 0.f,
+            .pSampleMask = nullptr,
+            .alphaToCoverageEnable = VK_FALSE,
+            .alphaToOneEnable = VK_FALSE
+        };
+
+        const VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState{
+            .blendEnable = VK_FALSE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+        };
+
+        const VkPipelineColorBlendStateCreateInfo pipelineColorBlendStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .logicOpEnable = VK_FALSE,
+            .logicOp = VK_LOGIC_OP_CLEAR,
+            .attachmentCount = 1,
+            .pAttachments = &pipelineColorBlendAttachmentState,
+            .blendConstants = {0.f, 0.f, 0.f, 0.f}
+        };
+
+        const std::array dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+
+        const VkPipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .dynamicStateCount = dynamicStates.size(),
+            .pDynamicStates = dynamicStates.data()
+        };
+
+        const VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = stages.size(),
+            .pStages = stages.data(),
+            .pVertexInputState = &pipelineVertexInputStateCreateInfo,
+            .pInputAssemblyState = &pipelineInputAssemblyStateCreateInfo,
+            .pTessellationState = nullptr,
+            .pViewportState = &pipelineViewportStateCreateInfo,
+            .pRasterizationState = &pipelineRasterizationStateCreateInfo,
+            .pMultisampleState = &pipelineMultisampleStateCreateInfo,
+            .pDepthStencilState = nullptr,
+            .pColorBlendState = &pipelineColorBlendStateCreateInfo,
+            .pDynamicState = &pipelineDynamicStateCreateInfo,
+            .layout = m_pipelineLayout,
+            .renderPass = m_renderPass,
+            .subpass = 0
+        };
+
+        VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &m_pipeline));
 
         // TODO: Assignment 2.2
         // Update the vertex input state to enable the upload of vertex data to the rasterizer. We will use one
@@ -261,21 +460,40 @@ class Assignment final {
     void createFramebuffer() {
         const VkImageView colorAttachment = m_app.getRenderTargetImageView();
         const VkExtent2D imageExtent = m_app.getRenderTargetExtent();
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.1
         // Create a framebuffer that contains the target color image view as a single attachment.
         //
         // [ New functions: vkCreateFramebuffer ]
 
+        const VkFramebufferCreateInfo framebufferCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .renderPass = m_renderPass,
+            .attachmentCount = 1,
+            .pAttachments = &colorAttachment,
+            .width = imageExtent.width,
+            .height = imageExtent.height,
+            .layers = 1
+        };
+
+        VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &m_framebuffer));
+
         // TODO: Assignment 2.7
         // Add the depth image view as a second attachment to the framebuffer.
     }
 
     void freeFramebuffer() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.1
         // Free the framebuffer. This function is called when the screen size changes.
         //
         // [ New functions: vkDestroyFramebuffer ]
+
+        vkDestroyFramebuffer(device, m_framebuffer, nullptr);
     }
 
     void createVertexBuffers() {
@@ -379,6 +597,48 @@ class Assignment final {
         //
         // [ New functions: vkCmdBeginRenderPass, vkCmdSetViewport, vkCmdSetScissor, vkCmdBindPipeline,
         //                  vkCmdDraw, vkCmdEndRenderPass ]
+
+        const VkRect2D scissor{
+            .offset = {0, 0},
+            .extent = extent
+        };
+
+        const std::array clearValues{
+            VkClearValue{
+                .color = {0.f, 0.f, 0.f, 1.f}
+            }
+        };
+
+        const VkRenderPassBeginInfo renderPassBeginInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .pNext = nullptr,
+            .renderPass = m_renderPass,
+            .framebuffer = m_framebuffer,
+            .renderArea = scissor,
+            .clearValueCount = clearValues.size(),
+            .pClearValues = clearValues.data()
+        };
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        const VkViewport viewport{
+            .x = 0,
+            .y = 0,
+            .width = WIDTH,
+            .height = HEIGHT,
+            .minDepth = 0.f,
+            .maxDepth = 1.f
+        };
+
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+
+        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+        vkCmdEndRenderPass(commandBuffer);
 
         // TODO: Assignment 2.2
         // Now, bind the vertex buffer before making the draw call.
