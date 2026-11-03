@@ -819,7 +819,7 @@ void VulkanApp::drawFrame(VkCommandBuffer commandBuffer) {
             .image = m_swapchain.getImage(m_swapchain.getCurrentImageIdx()),
             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
         };
-        const auto srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        const auto srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         const auto dstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
         vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);

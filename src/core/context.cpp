@@ -58,6 +58,9 @@ VkResult Context::init(const ContextInitInfo& info) {
         if (info.extraVerbose) {
             fprintf(stderr, "_________________________________________________\n");
             VK_CHECK_RETURN(printQueues());
+
+            fprintf(stderr, "_________________________________________________\n");
+            VK_CHECK_RETURN(printMemoryInfo());
         }
 
         fprintf(stderr, "_________________________________________________\n\n");
@@ -356,7 +359,7 @@ void Context::deinit() {
 
 //--------------------------------------------------------------------------------------------------
 
-VkResult Context::printVulkanVersion() {
+VkResult Context::printVulkanVersion() const {
     uint32_t version;
     VK_CHECK_RETURN(vkEnumerateInstanceVersion(&version));
 
@@ -412,7 +415,7 @@ static void printPhysicalDeviceProperties(const VkPhysicalDeviceProperties& prop
     fprintf(stderr, " - Device Type    : %s\n", getDeviceType(properties.deviceType).c_str());
 }
 
-VkResult Context::printGpus() {
+VkResult Context::printGpus() const {
     uint32_t deviceCount = 0;
     VK_CHECK_RETURN(vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr));
 
@@ -445,7 +448,7 @@ VkResult Context::printGpus() {
     return VK_SUCCESS;
 }
 
-VkResult Context::printQueues() {
+VkResult Context::printQueues() const {
     uint32_t queueFamilyCount;
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
 
@@ -463,6 +466,50 @@ VkResult Context::printQueues() {
 
     for (const auto& queue : m_queueInfos) {
         fprintf(stderr, " - family: %d, index: %d\n", queue.familyIndex, queue.queueIndex);
+    }
+
+    return VK_SUCCESS;
+}
+
+VkResult Context::printMemoryInfo() const {
+    VkPhysicalDeviceMemoryProperties mem{};
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &mem);
+
+    fprintf(stderr, "Memory: %u heaps, %u types\n", mem.memoryHeapCount, mem.memoryTypeCount);
+
+    const auto formatBytes = [](VkDeviceSize bytes) {
+        static const char* units[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+        double value = static_cast<double>(bytes);
+        int unit = 0;
+        while (value >= 1024.0 && unit < 4) {
+            value /= 1024.0;
+            ++unit;
+        }
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.2f %s", value, units[unit]);
+        return std::string(buf);
+    };
+
+    for (uint32_t h = 0; h < mem.memoryHeapCount; ++h) {
+        const VkMemoryHeap& heap = mem.memoryHeaps[h];
+        fprintf(
+            stderr,
+            "  Heap %u  %12s  %s\n",
+            h,
+            formatBytes(heap.size).c_str(),
+            heap.flags ? string_VkMemoryHeapFlags(heap.flags).c_str() : "(none)"
+        );
+
+        for (uint32_t t = 0; t < mem.memoryTypeCount; ++t) {
+            const VkMemoryType& type = mem.memoryTypes[t];
+            if (type.heapIndex != h) continue;
+            fprintf(
+                stderr,
+                "    |- type %-2u  %s\n",
+                t,
+                type.propertyFlags ? string_VkMemoryPropertyFlags(type.propertyFlags).c_str() : "(none)"
+            );
+        }
     }
 
     return VK_SUCCESS;

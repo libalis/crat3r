@@ -56,9 +56,10 @@ class Context final {
     VkResult findQueueFamilies(const ContextInitInfo& info);
     VkResult createDevice(const ContextInitInfo& info);
 
-    VkResult printVulkanVersion();
-    VkResult printGpus();
-    VkResult printQueues();
+    VkResult printVulkanVersion() const;
+    VkResult printGpus() const;
+    VkResult printQueues() const;
+    VkResult printMemoryInfo() const;
 
   private:
     VkInstance m_instance = VK_NULL_HANDLE;

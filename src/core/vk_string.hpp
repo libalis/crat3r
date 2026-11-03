@@ -148,3 +148,71 @@ static inline std::string string_VkQueueFlags(VkQueueFlags input_value) {
     if (ret.empty()) ret.append("VkQueueFlags(0)");
     return ret;
 }
+
+static inline const char* string_VkMemoryHeapFlagBits(VkMemoryHeapFlagBits input_value) {
+    switch (input_value) {
+        case VK_MEMORY_HEAP_DEVICE_LOCAL_BIT:
+            return "VK_MEMORY_HEAP_DEVICE_LOCAL_BIT";
+        case VK_MEMORY_HEAP_MULTI_INSTANCE_BIT:
+            return "VK_MEMORY_HEAP_MULTI_INSTANCE_BIT";
+        case VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM:
+            return "VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM";
+        default:
+            return "Unhandled VkMemoryHeapFlagBits";
+    }
+}
+
+static inline std::string string_VkMemoryHeapFlags(VkMemoryHeapFlags input_value) {
+    std::string ret;
+    int index = 0;
+    while(input_value) {
+        if (input_value & 1) {
+            if( !ret.empty()) ret.append("|");
+            ret.append(string_VkMemoryHeapFlagBits(static_cast<VkMemoryHeapFlagBits>(1U << index)));
+        }
+        ++index;
+        input_value >>= 1;
+    }
+    if (ret.empty()) ret.append("VkMemoryHeapFlags(0)");
+    return ret;
+}
+
+static inline const char* string_VkMemoryPropertyFlagBits(VkMemoryPropertyFlagBits input_value) {
+    switch (input_value) {
+        case VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT:
+            return "VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT";
+        case VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT:
+            return "VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT";
+        case VK_MEMORY_PROPERTY_HOST_COHERENT_BIT:
+            return "VK_MEMORY_PROPERTY_HOST_COHERENT_BIT";
+        case VK_MEMORY_PROPERTY_HOST_CACHED_BIT:
+            return "VK_MEMORY_PROPERTY_HOST_CACHED_BIT";
+        case VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT:
+            return "VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT";
+        case VK_MEMORY_PROPERTY_PROTECTED_BIT:
+            return "VK_MEMORY_PROPERTY_PROTECTED_BIT";
+        case VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD:
+            return "VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD";
+        case VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD:
+            return "VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD";
+        case VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV:
+            return "VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV";
+        default:
+            return "Unhandled VkMemoryPropertyFlagBits";
+    }
+}
+
+static inline std::string string_VkMemoryPropertyFlags(VkMemoryPropertyFlags input_value) {
+    std::string ret;
+    int index = 0;
+    while(input_value) {
+        if (input_value & 1) {
+            if( !ret.empty()) ret.append("|");
+            ret.append(string_VkMemoryPropertyFlagBits(static_cast<VkMemoryPropertyFlagBits>(1U << index)));
+        }
+        ++index;
+        input_value >>= 1;
+    }
+    if (ret.empty()) ret.append("VkMemoryPropertyFlags(0)");
+    return ret;
+}
