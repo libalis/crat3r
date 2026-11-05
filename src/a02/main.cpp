@@ -120,6 +120,9 @@ class Assignment final {
         vkDestroyPipeline(device, m_pipeline, nullptr);
         vkDestroyFramebuffer(device, m_framebuffer, nullptr);
 
+        // 2.2
+        m_vertexBuffer.deinit(nullptr);
+
         m_app.deinit();
     }
 
@@ -135,6 +138,9 @@ class Assignment final {
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_pipeline;
     VkFramebuffer m_framebuffer;
+
+    // 2.2
+    Buffer m_vertexBuffer;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -314,14 +320,38 @@ class Assignment final {
             }
         };
 
+        // TODO: Assignment 2.2
+        // Update the vertex input state to enable the upload of vertex data to the rasterizer. We will use one
+        // vertex binding, which is described on the CPU by 'Scene::Vertex'. One of these vertices contains two
+        // attributes: a three-dimensional position and a two-dimensional UV coordiate. Both of these use 32-bit
+        // signed floating-point numbers. You can use 'offsetof(Scene::Vertex, pos)' to find the offset of a
+        // field in a struct.
+
+        const VkVertexInputBindingDescription vertexInputBindingDescription[]{
+            {
+                .binding = 0,
+                .stride = sizeof(Scene::Vertex),
+                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+            }
+        };
+
+        const VkVertexInputAttributeDescription vertexInputAttributeDescription[]{
+            {
+                0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Scene::Vertex, pos)
+            },
+            {
+                1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Scene::Vertex, uv)
+            }
+        };
+
         const VkPipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
-            .vertexBindingDescriptionCount = 0,
-            .pVertexBindingDescriptions = nullptr,
-            .vertexAttributeDescriptionCount = 0,
-            .pVertexAttributeDescriptions = nullptr
+            .vertexBindingDescriptionCount = sizeof(vertexInputBindingDescription) / sizeof(vertexInputBindingDescription[0]),
+            .pVertexBindingDescriptions = vertexInputBindingDescription,
+            .vertexAttributeDescriptionCount = sizeof(vertexInputAttributeDescription) / sizeof(vertexInputAttributeDescription[0]),
+            .pVertexAttributeDescriptions = vertexInputAttributeDescription
         };
 
         const VkPipelineInputAssemblyStateCreateInfo pipelineInputAssemblyStateCreateInfo{
@@ -420,13 +450,6 @@ class Assignment final {
 
         VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &m_pipeline));
 
-        // TODO: Assignment 2.2
-        // Update the vertex input state to enable the upload of vertex data to the rasterizer. We will use one
-        // vertex binding, which is described on the CPU by 'Scene::Vertex'. One of these vertices contains two
-        // attributes: a three-dimensional position and a two-dimensional UV coordiate. Both of these use 32-bit
-        // signed floating-point numbers. You can use 'offsetof(Scene::Vertex, pos)' to find the offset of a
-        // field in a struct.
-
         // TODO: Assignment 2.5
         // Enable back-face culling in the rasterization state. Note that here, by convention, the front faces
         // are oriented counter-clockwise.
@@ -497,15 +520,7 @@ class Assignment final {
     }
 
     void createVertexBuffers() {
-        // TODO: Assignment 2.2
-        // Upload these vertices into a vertex buffer.
-        // Take a look at the utility function 'uploadBufferWithStaging' and the 'buffer.hpp' file.
-
-        // TODO: Assignment 2.6
-        // Upload the vertices of the first mesh in the scene instead.
-
-        // TODO: Assignment 2.9
-        // Iterate over the meshes (not nodes!) of the scene and create a vertex buffer for each mesh.
+        const VkDevice device = m_app.getDevice();
 
         const std::vector<Scene::Vertex> vertices{
             {{-0.5f, -0.5f, 0.0f}, {0.0f, 1.0f}},
@@ -516,6 +531,18 @@ class Assignment final {
             {{0.5f, 0.5f, 0.0f}, {1.0f, 0.0f}},
             {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f}},
         };
+
+        // TODO: Assignment 2.2
+        // Upload these vertices into a vertex buffer.
+        // Take a look at the utility function 'uploadBufferWithStaging' and the 'buffer.hpp' file.
+
+        m_vertexBuffer = uploadBufferWithStaging(vertices.data(), vertices.size() * sizeof(Scene::Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+        // TODO: Assignment 2.6
+        // Upload the vertices of the first mesh in the scene instead.
+
+        // TODO: Assignment 2.9
+        // Iterate over the meshes (not nodes!) of the scene and create a vertex buffer for each mesh.
     }
 
     void createIndexBuffers() {
@@ -587,6 +614,7 @@ class Assignment final {
     void recordCommandBuffer(VkCommandBuffer commandBuffer) {
         const uint32_t currentFrame = m_app.getSwapchain().getCurrentFrameIdx();
         const VkExtent2D extent = m_app.getRenderTargetExtent();
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.1
         // First, begin the render pass. Remember to set the render area and the clear value for the color
@@ -597,6 +625,12 @@ class Assignment final {
         //
         // [ New functions: vkCmdBeginRenderPass, vkCmdSetViewport, vkCmdSetScissor, vkCmdBindPipeline,
         //                  vkCmdDraw, vkCmdEndRenderPass ]
+
+        // TODO: Assignment 2.2
+        // Now, bind the vertex buffer before making the draw call.
+        // Then, update the draw call to render six vertices instead of three.
+        //
+        // [ New functions: vkCmdBindVertexBuffers ]
 
         const VkRect2D scissor{
             .offset = {0, 0},
@@ -636,15 +670,12 @@ class Assignment final {
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        const VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer.buffer, &offset);
+
+        vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.2
-        // Now, bind the vertex buffer before making the draw call.
-        // Then, update the draw call to render six vertices instead of three.
-        //
-        // [ New functions: vkCmdBindVertexBuffers ]
 
         // TODO: Assignment 2.3
         // After binding the vertex buffer, also bind the index buffer.
