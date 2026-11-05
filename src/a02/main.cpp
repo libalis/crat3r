@@ -386,6 +386,10 @@ class Assignment final {
             .pScissors = nullptr
         };
 
+        // TODO: Assignment 2.5
+        // Enable back-face culling in the rasterization state. Note that here, by convention, the front faces
+        // are oriented counter-clockwise.
+
         const VkPipelineRasterizationStateCreateInfo pipelineRasterizationStateCreateInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
             .pNext = nullptr,
@@ -393,7 +397,7 @@ class Assignment final {
             .depthClampEnable = VK_FALSE,
             .rasterizerDiscardEnable = VK_FALSE,
             .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_NONE,
+            .cullMode = VK_CULL_MODE_BACK_BIT,
             .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE
         };
 
@@ -463,10 +467,6 @@ class Assignment final {
         };
 
         VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &m_pipeline));
-
-        // TODO: Assignment 2.5
-        // Enable back-face culling in the rasterization state. Note that here, by convention, the front faces
-        // are oriented counter-clockwise.
 
         // TODO: Assignment 2.7
         // Add a depth and stencil state and enable the writing of depth values and depth test. Also specify
