@@ -120,13 +120,21 @@ class Assignment final {
         vkDestroyFramebuffer(device, m_framebuffer, nullptr);
 
         // 2.2
-        m_vertexBuffer.deinit(nullptr);
+        m_vertexBuffer.deinit(allocator);
 
         // 2.3
-        m_indexBuffer.deinit(nullptr);
+        m_indexBuffer.deinit(allocator);
 
         // 2.7
-        m_depthImage.deinit(nullptr);
+        vkDestroyImageView(device, m_depthImageView, nullptr);
+        m_depthImage.deinit(allocator);
+
+        // 2.8
+        vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
+        vkDestroyImageView(device, m_textureImageView, nullptr);
+        m_textureImage.deinit(allocator);
+        vkDestroySampler(device, m_textureSampler, nullptr);
+        vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
 
         m_app.deinit();
     }
@@ -154,6 +162,14 @@ class Assignment final {
     // 2.7
     Image m_depthImage;
     VkImageView m_depthImageView;
+
+    // 2.8
+    VkDescriptorSetLayout m_descriptorSetLayout;
+    Image m_textureImage;
+    VkImageView m_textureImageView;
+    VkSampler m_textureSampler;
+    VkDescriptorPool m_descriptorPool;
+    std::vector<VkDescriptorSet> m_descriptorSets;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -263,8 +279,24 @@ class Assignment final {
     }
 
     void createDescriptorSetLayout() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.8
         // Create a descriptor set layout for a single combined image sampler at binding zero.
+
+        const VkDescriptorSetLayoutBinding descriptorSetLayoutBinding[] = {
+            {
+                0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
+            }
+        };
+
+        const VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = sizeof(descriptorSetLayoutBinding) / sizeof(descriptorSetLayoutBinding[0]),
+            .pBindings = descriptorSetLayoutBinding,
+        };
+
+        VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayout));
 
         // TODO: Assignment 2.12
         // Add a second layout binding for a uniform buffer.
@@ -281,6 +313,9 @@ class Assignment final {
         // TODO: Assignment 2.4
         // Add a push constant range for the vertex shader using the 'VertexPushConstants' struct.
 
+        // TODO: Assignment 2.8
+        // Add the descriptor set layout to the pipeline layout.
+
         const VkPushConstantRange pushConstantRange[]{
             {
                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
@@ -293,16 +328,13 @@ class Assignment final {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
-            .setLayoutCount = 0,
-            .pSetLayouts = nullptr,
+            .setLayoutCount = 1,
+            .pSetLayouts = &m_descriptorSetLayout,
             .pushConstantRangeCount = sizeof(pushConstantRange) / sizeof(pushConstantRange[0]),
             .pPushConstantRanges = pushConstantRange
         };
 
         VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayout));
-
-        // TODO: Assignment 2.8
-        // Add the descriptor set layout to the pipeline layout.
     }
 
     static VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code) {
@@ -563,7 +595,7 @@ class Assignment final {
             .pNext = nullptr,
             .flags = 0,
             .image = m_depthImage.image,
-            .viewType = VK_IMAGE_VIEW_TYPE_1D,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = format,
             .components = componentMapping,
             .subresourceRange = imageSubresourceRange
@@ -579,6 +611,7 @@ class Assignment final {
         // Destroy the depth image view and free the depth image.
 
         vkDestroyImageView(device, m_depthImageView, nullptr);
+        m_depthImage.deinit(m_app.getAllocator());
     }
 
     void createFramebuffer() {
@@ -660,19 +693,89 @@ class Assignment final {
 
     void createTextures() {
         const VmaAllocator allocator = m_app.getAllocator();
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.8
         // Upload the first texture of the scene ('m_scene.textures[0]') to a device local image. The format of
         // the texture is given by 'texture.format'. You may use the utility function 'uploadImageWithStaging'.
         // Then create an image view for the texture image.
 
+        Scene::Texture firstTexture = m_scene.textures[0];
+
+        VkExtent3D extent = {
+            .width = firstTexture.width,
+            .height = firstTexture.height,
+            .depth = 1
+        };
+
+        m_textureImage = uploadImageWithStaging(firstTexture.data.data(),
+            firstTexture.data.size() * sizeof(uint8_t),
+            VK_IMAGE_TYPE_2D,
+            firstTexture.format,
+            extent,
+            VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        const VkComponentMapping componentMapping{
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY
+        };
+
+        VkImageSubresourceRange imageSubresourceRange{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        };
+
+        const VkImageViewCreateInfo imageViewCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .image = m_textureImage.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = firstTexture.format,
+            .components = componentMapping,
+            .subresourceRange = imageSubresourceRange
+        };
+
+        VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &m_textureImageView));
+
         // TODO: Assignment 2.10
         // Now, create an image and view for each texture used in the scene.
     }
 
     void createTextureSampler() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.8
         // Create a sampler for textures with linear minification and magnification.
+
+        VkSamplerCreateInfo samplerCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .mipLodBias = 0.0f,
+            .anisotropyEnable = VK_FALSE,
+            .maxAnisotropy = 0.0f,
+            .compareEnable = VK_FALSE,
+            .compareOp = VK_COMPARE_OP_NEVER,
+            .minLod = 0.0f,
+            .maxLod = VK_LOD_CLAMP_NONE,
+            .borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+            .unnormalizedCoordinates = VK_FALSE
+        };
+
+        VK_CHECK(vkCreateSampler(device, &samplerCreateInfo, nullptr, &m_textureSampler));
     }
 
     void createUniformBuffers() {
@@ -684,8 +787,27 @@ class Assignment final {
     }
 
     void createDescriptorPool() {
+        const uint32_t framesInFlight = 1;
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.8
         // Create a descriptor pool for one combined image sampler.
+
+        const VkDescriptorPoolSize descriptorPoolSize[]{
+            {
+                .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = framesInFlight
+            }
+        };
+
+        const VkDescriptorPoolCreateInfo descriptorPoolCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .maxSets = framesInFlight,
+            .poolSizeCount = sizeof(descriptorPoolSize) / sizeof(descriptorPoolSize[0]),
+            .pPoolSizes = descriptorPoolSize
+        };
+
+        VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool));
 
         // TODO: Assignment 2.10
         // Reserve enough space for as many descriptors and sets as there are materials (not textures!) in the scene.
@@ -695,8 +817,46 @@ class Assignment final {
     }
 
     void createDescriptorSets() {
+        const uint32_t framesInFlight = 1;
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.8
         // Allocate a descriptor set and update it by writing the texture image and sampler to binding zero.
+
+        m_descriptorSets.resize(framesInFlight);
+        const std::vector<VkDescriptorSetLayout> descriptorSetLayouts{framesInFlight, m_descriptorSetLayout};
+        const VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .descriptorPool = m_descriptorPool,
+            .descriptorSetCount = framesInFlight,
+            .pSetLayouts = descriptorSetLayouts.data()
+        };
+        VK_CHECK(vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, m_descriptorSets.data()));
+        for (size_t i = 0; i < framesInFlight; i++) {
+            const VkDescriptorImageInfo descriptorImageInfo[]{
+                {
+                    .sampler = m_textureSampler,
+                    .imageView = m_textureImageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                }
+            };
+            const VkWriteDescriptorSet writeDescriptorSet[]{
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .pNext = nullptr,
+                    .dstSet = m_descriptorSets[i],
+                    .dstBinding = 0,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .pImageInfo = &descriptorImageInfo[0],
+                    .pBufferInfo = nullptr,
+                    .pTexelBufferView = nullptr
+                }
+            };
+            vkUpdateDescriptorSets(device, sizeof(writeDescriptorSet) / sizeof(writeDescriptorSet[0]), writeDescriptorSet, 0, nullptr);
+        }
 
         // TODO: Assignment 2.10
         // Create a seperate descriptor set for each material. The index of the texure a material uses is given
@@ -751,6 +911,9 @@ class Assignment final {
         // TODO: Assignment 2.7
         // Add a second clear value for the depth image and set it to one for the initial depth.
 
+        // TODO: Assignment 2.8
+        // Bind the descriptor set before the draw call.
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -780,8 +943,8 @@ class Assignment final {
         const VkViewport viewport{
             .x = 0,
             .y = 0,
-            .width = WIDTH,
-            .height = HEIGHT,
+            .width = static_cast<float>(extent.width),
+            .height = static_cast<float>(extent.height),
             .minDepth = 0.f,
             .maxDepth = 1.f
         };
@@ -797,6 +960,15 @@ class Assignment final {
         };
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
 
+        vkCmdBindDescriptorSets(commandBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_pipelineLayout,
+            0,
+            m_descriptorSets.size(),
+            m_descriptorSets.data(),
+            0,
+            nullptr);
+
         const VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer.buffer, &offset);
         vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -804,9 +976,6 @@ class Assignment final {
         vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.8
-        // Bind the descriptor set before the draw call.
 
         // TODO: Assignment 2.9
         // Submit a draw call for each node (not mesh!) of the scene. For each node, create push constants using
