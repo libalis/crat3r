@@ -128,6 +128,9 @@ class Assignment final {
         // 2.3
         m_indexBuffer.deinit(nullptr);
 
+        // 2.7
+        m_depthImage.deinit(nullptr);
+
         m_app.deinit();
     }
 
@@ -150,6 +153,10 @@ class Assignment final {
     // 2.3
     Buffer m_indexBuffer;
     size_t numIndices;
+
+    // 2.7
+    Image m_depthImage;
+    VkImageView m_depthImageView;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -182,6 +189,10 @@ class Assignment final {
         //
         // [ New functions: vkCreateRenderPass ]
 
+        // TODO: Assignment 2.7
+        // Add a second attachment description and attachment reference and subpass dependency
+        // for the depth attachment.
+
         const std::array attachments = {
             VkAttachmentDescription{
                 .format = targetFormat,
@@ -192,6 +203,16 @@ class Assignment final {
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                 .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            },
+            VkAttachmentDescription{
+                .format = VK_FORMAT_D32_SFLOAT,
+                .samples = VK_SAMPLE_COUNT_1_BIT,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
             }
         };
 
@@ -200,11 +221,16 @@ class Assignment final {
             .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         };
 
+        const VkAttachmentReference depthAttachmentReference{
+            .attachment = 1,
+            .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        };
+
         const VkSubpassDescription subpass{
             .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
             .colorAttachmentCount = 1,
             .pColorAttachments = &colorAttachmentReference,
-            .pDepthStencilAttachment = nullptr
+            .pDepthStencilAttachment = &depthAttachmentReference
         };
 
         const std::array dependencies = {
@@ -215,6 +241,14 @@ class Assignment final {
                 .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                 .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
                 .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+            },
+            VkSubpassDependency{
+                .srcSubpass = VK_SUBPASS_EXTERNAL,
+                .dstSubpass = 0,
+                .srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                .dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
             }
         };
 
@@ -229,10 +263,6 @@ class Assignment final {
         };
 
         VK_CHECK(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &m_renderPass));
-
-        // TODO: Assignment 2.7
-        // Add a second attachment description and attachment reference and subpass dependency
-        // for the depth attachment.
     }
 
     void createDescriptorSetLayout() {
@@ -401,7 +431,9 @@ class Assignment final {
             .rasterizerDiscardEnable = VK_FALSE,
             .polygonMode = VK_POLYGON_MODE_FILL,
             .cullMode = VK_CULL_MODE_BACK_BIT,
-            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE
+            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .depthBiasEnable = VK_FALSE,
+            .lineWidth = 1.f
         };
 
         const VkPipelineMultisampleStateCreateInfo pipelineMultisampleStateCreateInfo{
@@ -425,6 +457,21 @@ class Assignment final {
             .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
             .alphaBlendOp = VK_BLEND_OP_ADD,
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+        };
+
+        // TODO: Assignment 2.7
+        // Add a depth and stencil state and enable the writing of depth values and depth test. Also specify
+        // the depth compare operation. The stencil operations should be disabled.
+
+        const VkPipelineDepthStencilStateCreateInfo pipelineDepthStencilStateCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .depthTestEnable = VK_TRUE,
+            .depthWriteEnable = VK_TRUE,
+            .depthCompareOp = VK_COMPARE_OP_LESS,
+            .depthBoundsTestEnable = VK_FALSE,
+            .stencilTestEnable = VK_FALSE
         };
 
         const VkPipelineColorBlendStateCreateInfo pipelineColorBlendStateCreateInfo{
@@ -461,7 +508,7 @@ class Assignment final {
             .pViewportState = &pipelineViewportStateCreateInfo,
             .pRasterizationState = &pipelineRasterizationStateCreateInfo,
             .pMultisampleState = &pipelineMultisampleStateCreateInfo,
-            .pDepthStencilState = nullptr,
+            .pDepthStencilState = &pipelineDepthStencilStateCreateInfo,
             .pColorBlendState = &pipelineColorBlendStateCreateInfo,
             .pDynamicState = &pipelineDynamicStateCreateInfo,
             .layout = m_pipelineLayout,
@@ -470,10 +517,6 @@ class Assignment final {
         };
 
         VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &m_pipeline));
-
-        // TODO: Assignment 2.7
-        // Add a depth and stencil state and enable the writing of depth values and depth test. Also specify
-        // the depth compare operation. The stencil operations should be disabled.
 
         // TODO: Assignment 2.11
         // Enable color blending for this pipeline. Set the blend operations and factors for standard
@@ -486,15 +529,59 @@ class Assignment final {
     void createDepthResources() {
         const VkFormat format = VK_FORMAT_D32_SFLOAT;
         const VkExtent2D extent = m_app.getRenderTargetExtent();
+        const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.7
         // Create a device-local image of the specified format and size to be used as a depth attachment.
         // See 'image.hpp' for a convenient helper struct. Then create an image view of the depth image.
+
+        VkExtent3D extent3D = {
+            .width  = extent.width,
+            .height = extent.height,
+            .depth  = 1
+        };
+
+        VK_CHECK(m_depthImage.init(m_app.getAllocator(), VK_IMAGE_TYPE_2D, format, extent3D,
+            VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+
+        const VkComponentMapping componentMapping{
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY
+        };
+
+        VkImageSubresourceRange imageSubresourceRange{
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        };
+
+        const VkImageViewCreateInfo imageViewCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .image = m_depthImage.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_1D,
+            .format = format,
+            .components = componentMapping,
+            .subresourceRange = imageSubresourceRange
+        };
+
+        VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &m_depthImageView));
     }
 
     void freeDepthResources() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.7
         // Destroy the depth image view and free the depth image.
+
+        vkDestroyImageView(device, m_depthImageView, nullptr);
     }
 
     void createFramebuffer() {
@@ -507,22 +594,27 @@ class Assignment final {
         //
         // [ New functions: vkCreateFramebuffer ]
 
+        // TODO: Assignment 2.7
+        // Add the depth image view as a second attachment to the framebuffer.
+
+        const VkImageView attachments[]{
+            colorAttachment,
+            m_depthImageView
+        };
+
         const VkFramebufferCreateInfo framebufferCreateInfo{
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
             .renderPass = m_renderPass,
-            .attachmentCount = 1,
-            .pAttachments = &colorAttachment,
+            .attachmentCount = sizeof(attachments) / sizeof(attachments[0]),
+            .pAttachments = attachments,
             .width = imageExtent.width,
             .height = imageExtent.height,
             .layers = 1
         };
 
         VK_CHECK(vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &m_framebuffer));
-
-        // TODO: Assignment 2.7
-        // Add the depth image view as a second attachment to the framebuffer.
     }
 
     void freeFramebuffer() {
@@ -656,6 +748,12 @@ class Assignment final {
         //
         // [ New functions: vkCmdPushConstants ]
 
+        // TODO: Assignment 2.6
+        // Update the number of indices to match the mesh and apply the node's model matrix to the MVP matrix.
+
+        // TODO: Assignment 2.7
+        // Add a second clear value for the depth image and set it to one for the initial depth.
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -664,6 +762,9 @@ class Assignment final {
         const std::array clearValues{
             VkClearValue{
                 .color = {0.f, 0.f, 0.f, 1.f}
+            },
+            VkClearValue{
+                .depthStencil = {1., 0}
             }
         };
 
@@ -706,12 +807,6 @@ class Assignment final {
         vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.6
-        // Update the number of indices to match the mesh and apply the node's model matrix to the MVP matrix.
-
-        // TODO: Assignment 2.7
-        // Add a second clear value for the depth image and set it to one for the initial depth.
 
         // TODO: Assignment 2.8
         // Bind the descriptor set before the draw call.
