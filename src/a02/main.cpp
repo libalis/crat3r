@@ -32,8 +32,8 @@ constexpr bool VSYNC = true;
 // TODO: Assignment 2.6 / 2.9
 // Update the model to be loaded here.
 const std::string SCENE = //
-    ""
-    // "assets/shiba.glb"
+    // ""
+    "assets/shiba.glb"
     // "assets/tokyo.glb"
     ;
 
@@ -536,21 +536,15 @@ class Assignment final {
     void createVertexBuffers() {
         const VkDevice device = m_app.getDevice();
 
-        const std::vector<Scene::Vertex> vertices{
-            {{-0.5f, -0.5f, 0.0f}, {0.0f, 1.0f}},
-            {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f}},
-            {{0.5f, 0.5f, 0.0f}, {1.0f, 0.0f}},
-            {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f}}
-        };
-
         // TODO: Assignment 2.2
         // Upload these vertices into a vertex buffer.
         // Take a look at the utility function 'uploadBufferWithStaging' and the 'buffer.hpp' file.
 
-        m_vertexBuffer = uploadBufferWithStaging(vertices.data(), vertices.size() * sizeof(Scene::Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-
         // TODO: Assignment 2.6
         // Upload the vertices of the first mesh in the scene instead.
+
+        Scene::Mesh firstMesh = m_scene.meshes[0];
+        m_vertexBuffer = uploadBufferWithStaging(firstMesh.vertices.data(), firstMesh.vertices.size() * sizeof(Scene::Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
         // TODO: Assignment 2.9
         // Iterate over the meshes (not nodes!) of the scene and create a vertex buffer for each mesh.
@@ -561,14 +555,12 @@ class Assignment final {
         // Create an index buffer that holds six indices pointing to the above vertices. Use a 32-bit unsigned integer
         // for the indices. You should then be able to reduce the number of vertices in the vertex buffer to four.
 
-        const std::vector<uint16_t> indices{
-            0, 1, 2, 0, 2, 3
-        };
-        numIndices = indices.size();
-        m_indexBuffer = uploadBufferWithStaging(indices.data(), numIndices * sizeof(uint16_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
         // TODO: Assignment 2.6
         // Upload the indices of the first mesh in the scene instead.
+
+        Scene::Mesh firstMesh = m_scene.meshes[0];
+        numIndices = firstMesh.indices.size();
+        m_indexBuffer = uploadBufferWithStaging(firstMesh.indices.data(), numIndices * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
         // TODO: Assignment 2.9
         // Iterate over the meshes (not nodes!) of the scene and create an index buffer for each mesh.
@@ -700,13 +692,13 @@ class Assignment final {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
         VertexPushConstants vertexPushConstants = {
-            .MVP = m_app.getProjMat() * m_app.getViewMat()
+            .MVP =  m_app.getProjMat() * m_app.getViewMat() * m_scene.nodes[0].transform
         };
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
 
         const VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer.buffer, &offset);
-        vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
         vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
 
