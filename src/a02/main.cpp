@@ -1,4 +1,6 @@
+#include "glm/ext/scalar_uint_sized.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <volk.h>
 #include <vulkan/vulkan_core.h>
 
@@ -123,6 +125,9 @@ class Assignment final {
         // 2.2
         m_vertexBuffer.deinit(nullptr);
 
+        // 2.3
+        m_indexBuffer.deinit(nullptr);
+
         m_app.deinit();
     }
 
@@ -141,6 +146,10 @@ class Assignment final {
 
     // 2.2
     Buffer m_vertexBuffer;
+
+    // 2.3
+    Buffer m_indexBuffer;
+    size_t numIndices;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -526,10 +535,7 @@ class Assignment final {
             {{-0.5f, -0.5f, 0.0f}, {0.0f, 1.0f}},
             {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f}},
             {{0.5f, 0.5f, 0.0f}, {1.0f, 0.0f}},
-
-            {{-0.5f, -0.5f, 0.0f}, {0.0f, 1.0f}},
-            {{0.5f, 0.5f, 0.0f}, {1.0f, 0.0f}},
-            {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f}},
+            {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f}}
         };
 
         // TODO: Assignment 2.2
@@ -549,6 +555,12 @@ class Assignment final {
         // TODO: Assignment 2.3
         // Create an index buffer that holds six indices pointing to the above vertices. Use a 32-bit unsigned integer
         // for the indices. You should then be able to reduce the number of vertices in the vertex buffer to four.
+
+        const std::vector<uint16_t> indices{
+            0, 1, 2, 0, 2, 3
+        };
+        numIndices = indices.size();
+        m_indexBuffer = uploadBufferWithStaging(indices.data(), numIndices * sizeof(uint16_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
         // TODO: Assignment 2.6
         // Upload the indices of the first mesh in the scene instead.
@@ -632,6 +644,12 @@ class Assignment final {
         //
         // [ New functions: vkCmdBindVertexBuffers ]
 
+        // TODO: Assignment 2.3
+        // After binding the vertex buffer, also bind the index buffer.
+        // Then update the draw call to use the index  buffer.
+        //
+        // [ New functions: vkCmdBindIndexBuffer, vkCmdDrawIndexed ]
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -672,16 +690,11 @@ class Assignment final {
 
         const VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer.buffer, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
-        vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.3
-        // After binding the vertex buffer, also bind the index buffer.
-        // Then update the draw call to use the index  buffer.
-        //
-        // [ New functions: vkCmdBindIndexBuffer, vkCmdDrawIndexed ]
 
         // TODO: Assignment 2.4
         // Before the draw call, push the push constants for the vertex buffer.
