@@ -251,20 +251,28 @@ class Assignment final {
         //
         // [ New functions: vkCreatePipelineLayout ]
 
+        // TODO: Assignment 2.4
+        // Add a push constant range for the vertex shader using the 'VertexPushConstants' struct.
+
+        const VkPushConstantRange pushConstantRange[]{
+            {
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                .offset = 0,
+                .size = sizeof(VertexPushConstants)
+            }
+        };
+
         const VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
             .setLayoutCount = 0,
             .pSetLayouts = nullptr,
-            .pushConstantRangeCount = 0,
-            .pPushConstantRanges = nullptr
+            .pushConstantRangeCount = sizeof(pushConstantRange) / sizeof(pushConstantRange[0]),
+            .pPushConstantRanges = pushConstantRange
         };
 
         VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayout));
-
-        // TODO: Assignment 2.4
-        // Add a push constant range for the vertex shader using the 'VertexPushConstants' struct.
 
         // TODO: Assignment 2.8
         // Add the descriptor set layout to the pipeline layout.
@@ -650,6 +658,12 @@ class Assignment final {
         //
         // [ New functions: vkCmdBindIndexBuffer, vkCmdDrawIndexed ]
 
+        // TODO: Assignment 2.4
+        // Before the draw call, push the push constants for the vertex buffer.
+        // You can calculate the MVP matrix by 'm_app.getProjMat() * m_app.getViewMat()'.
+        //
+        // [ New functions: vkCmdPushConstants ]
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -688,6 +702,11 @@ class Assignment final {
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
+        VertexPushConstants vertexPushConstants = {
+            .MVP = m_app.getProjMat() * m_app.getViewMat()
+        };
+        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
+
         const VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer.buffer, &offset);
         vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
@@ -695,12 +714,6 @@ class Assignment final {
         vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.4
-        // Before the draw call, push the push constants for the vertex buffer.
-        // You can calculate the MVP matrix by 'm_app.getProjMat() * m_app.getViewMat()'.
-        //
-        // [ New functions: vkCmdPushConstants ]
 
         // TODO: Assignment 2.6
         // Update the number of indices to match the mesh and apply the node's model matrix to the MVP matrix.
