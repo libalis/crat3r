@@ -33,8 +33,8 @@ constexpr bool VSYNC = true;
 // Update the model to be loaded here.
 const std::string SCENE = //
     // ""
-    "assets/shiba.glb"
-    // "assets/tokyo.glb"
+    // "assets/shiba.glb"
+    "assets/tokyo.glb"
     ;
 
 //--------------------------------------------------------------------------------------------------
@@ -119,12 +119,6 @@ class Assignment final {
         vkDestroyPipeline(device, m_pipeline, nullptr);
         vkDestroyFramebuffer(device, m_framebuffer, nullptr);
 
-        // 2.2
-        m_vertexBuffer.deinit(allocator);
-
-        // 2.3
-        m_indexBuffer.deinit(allocator);
-
         // 2.7
         vkDestroyImageView(device, m_depthImageView, nullptr);
         m_depthImage.deinit(allocator);
@@ -135,6 +129,14 @@ class Assignment final {
         m_textureImage.deinit(allocator);
         vkDestroySampler(device, m_textureSampler, nullptr);
         vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
+
+        // 2.9
+        for(auto& v : m_vertexBuffer) {
+             v.deinit(allocator);
+        }
+        for(auto& i : m_indexBuffer) {
+            i.deinit(allocator);
+        }
 
         m_app.deinit();
     }
@@ -152,13 +154,6 @@ class Assignment final {
     VkPipeline m_pipeline;
     VkFramebuffer m_framebuffer;
 
-    // 2.2
-    Buffer m_vertexBuffer;
-
-    // 2.3
-    Buffer m_indexBuffer;
-    size_t numIndices;
-
     // 2.7
     Image m_depthImage;
     VkImageView m_depthImageView;
@@ -170,6 +165,11 @@ class Assignment final {
     VkSampler m_textureSampler;
     VkDescriptorPool m_descriptorPool;
     std::vector<VkDescriptorSet> m_descriptorSets;
+
+    // 2.9
+    std::vector<Buffer> m_vertexBuffer;
+    std::vector<Buffer> m_indexBuffer;
+    std::vector<size_t> numIndices;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -668,11 +668,13 @@ class Assignment final {
         // TODO: Assignment 2.6
         // Upload the vertices of the first mesh in the scene instead.
 
-        Scene::Mesh firstMesh = m_scene.meshes[0];
-        m_vertexBuffer = uploadBufferWithStaging(firstMesh.vertices.data(), firstMesh.vertices.size() * sizeof(Scene::Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-
         // TODO: Assignment 2.9
         // Iterate over the meshes (not nodes!) of the scene and create a vertex buffer for each mesh.
+
+        m_vertexBuffer.resize(m_scene.meshes.size());
+        for(size_t i = 0; i < m_scene.meshes.size(); i++) {
+            m_vertexBuffer[i] = uploadBufferWithStaging(m_scene.meshes[i].vertices.data(), m_scene.meshes[i].vertices.size() * sizeof(Scene::Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        }
     }
 
     void createIndexBuffers() {
@@ -683,12 +685,15 @@ class Assignment final {
         // TODO: Assignment 2.6
         // Upload the indices of the first mesh in the scene instead.
 
-        Scene::Mesh firstMesh = m_scene.meshes[0];
-        numIndices = firstMesh.indices.size();
-        m_indexBuffer = uploadBufferWithStaging(firstMesh.indices.data(), numIndices * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
         // TODO: Assignment 2.9
         // Iterate over the meshes (not nodes!) of the scene and create an index buffer for each mesh.
+
+        numIndices.resize(m_scene.meshes.size());
+        m_indexBuffer.resize(m_scene.meshes.size());
+        for(size_t i = 0; i < m_scene.meshes.size(); i++) {
+            numIndices[i] = m_scene.meshes[i].indices.size();
+            m_indexBuffer[i] = uploadBufferWithStaging(m_scene.meshes[i].indices.data(), numIndices[i] * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        }
     }
 
     void createTextures() {
@@ -914,6 +919,12 @@ class Assignment final {
         // TODO: Assignment 2.8
         // Bind the descriptor set before the draw call.
 
+        // TODO: Assignment 2.9
+        // Submit a draw call for each node (not mesh!) of the scene. For each node, create push constants using
+        // the transform of the node, and bind the vertex and index buffers for the mesh referenced by the node.
+        // Remember that the node and mesh indices are not the same, as multiple nodes can reference the same mesh.
+        // Then, submit a draw call for each node, using the correct number of indices.
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -955,11 +966,6 @@ class Assignment final {
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-        VertexPushConstants vertexPushConstants = {
-            .MVP =  m_app.getProjMat() * m_app.getViewMat() * m_scene.nodes[0].transform
-        };
-        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
-
         vkCmdBindDescriptorSets(commandBuffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_pipelineLayout,
@@ -970,18 +976,20 @@ class Assignment final {
             nullptr);
 
         const VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer.buffer, &offset);
-        vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        const glm::mat4 viewProjection = m_app.getProjMat() * m_app.getViewMat();
 
-        vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
+        m_scene.traverseNodes([&](const glm::mat4& transform, uint32_t meshIdx) {
+            const VertexPushConstants vertexPushConstants = {
+                .MVP = viewProjection * transform
+            };
+            vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
+
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer[meshIdx].buffer, &offset);
+            vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer[meshIdx].buffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(numIndices[meshIdx]), 1, 0, 0, 0);
+        });
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.9
-        // Submit a draw call for each node (not mesh!) of the scene. For each node, create push constants using
-        // the transform of the node, and bind the vertex and index buffers for the mesh referenced by the node.
-        // Remember that the node and mesh indices are not the same, as multiple nodes can reference the same mesh.
-        // Then, submit a draw call for each node, using the correct number of indices.
 
         // TODO: Assignment 2.10
         // Bind the descriptor set corresponding to the material of the mesh of the current node before submitting
