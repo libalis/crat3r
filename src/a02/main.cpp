@@ -144,6 +144,11 @@ class Assignment final {
             image.deinit(allocator);
         }
 
+        // 2.12
+        for(auto& buffer : m_materialBuffer) {
+            buffer.deinit(allocator);
+        }
+
         m_app.deinit();
     }
 
@@ -178,6 +183,9 @@ class Assignment final {
     // 2.10
     std::vector<Image> m_textureImages;
     std::vector<VkImageView> m_textureImageViews;
+
+    // 2.12
+    std::vector<Buffer> m_materialBuffer;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -292,9 +300,15 @@ class Assignment final {
         // TODO: Assignment 2.8
         // Create a descriptor set layout for a single combined image sampler at binding zero.
 
+        // TODO: Assignment 2.12
+        // Add a second layout binding for a uniform buffer.
+
         const VkDescriptorSetLayoutBinding descriptorSetLayoutBinding[] = {
             {
                 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
+            },
+            {
+                1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr
             }
         };
 
@@ -305,9 +319,6 @@ class Assignment final {
         };
 
         VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayout));
-
-        // TODO: Assignment 2.12
-        // Add a second layout binding for a uniform buffer.
     }
 
     void createPipelineLayout() {
@@ -797,11 +808,23 @@ class Assignment final {
     }
 
     void createUniformBuffers() {
+        const VkDevice device = m_app.getDevice();
+
         // TODO: Assignment 2.12
         // Upload an instance of 'MaterialUniformBuffer' for each material to the GPU. As the material properties
         // do not change, these buffers can be stored in device local memory. The base color of a material is
         // made up of 'material.colDiffuse' and 'material.opacity'. A material has a texture if
         // 'material.texDiffuseIdx.has_value()' is true.
+
+        size_t size = m_scene.materials.size();
+        m_materialBuffer.reserve(size);
+        for(auto& material : m_scene.materials) {
+            MaterialUniformBuffer materialUniformBuffer{
+                .baseColor = {material.colDiffuse, material.opacity},
+                .hasTexture = material.texDiffuseIdx.has_value() ? 1 : 0
+            };
+            m_materialBuffer.push_back(uploadBufferWithStaging(&materialUniformBuffer, sizeof(MaterialUniformBuffer), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT));
+        }
     }
 
     void createDescriptorPool() {
@@ -813,9 +836,16 @@ class Assignment final {
         // TODO: Assignment 2.10
         // Reserve enough space for as many descriptors and sets as there are materials (not textures!) in the scene.
 
+        // TODO: Assignment 2.12
+        // Additionally reserve enough space for one uniform buffer per material.
+
         const VkDescriptorPoolSize descriptorPoolSize[]{
             {
                 .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = static_cast<uint32_t>(m_scene.materials.size())
+            },
+            {
+                .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .descriptorCount = static_cast<uint32_t>(m_scene.materials.size())
             }
         };
@@ -828,9 +858,6 @@ class Assignment final {
         };
 
         VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool));
-
-        // TODO: Assignment 2.12
-        // Additionally reserve enough space for one uniform buffer per material.
     }
 
     void createDescriptorSets() {
@@ -846,6 +873,9 @@ class Assignment final {
         // There are multiple ways to handle this. You would likely want different pipelines with other shaders
         // for different materials in an actual renderer. Here, you can simply bind the first textures as a
         // fallback if there is no texture defined.
+
+        // TODO: Assignment 2.12
+        // Write the uniform buffer in addition to the combined image sampler to the descriptor sets.
 
         m_descriptorSets.resize(m_scene.materials.size());
         const std::vector<VkDescriptorSetLayout> descriptorSetLayouts{m_scene.materials.size(), m_descriptorSetLayout};
@@ -866,11 +896,18 @@ class Assignment final {
                     .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                 }
             };
+            const VkDescriptorBufferInfo descriptorBufferInfo[]{
+                {
+                    .buffer = m_materialBuffer[idx].buffer,
+                    .offset = 0,
+                    .range = VK_WHOLE_SIZE
+                }
+            };
             const VkWriteDescriptorSet writeDescriptorSet[]{
                 {
                     .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .pNext = nullptr,
-                    .dstSet = m_descriptorSets[idx++],
+                    .dstSet = m_descriptorSets[idx],
                     .dstBinding = 0,
                     .dstArrayElement = 0,
                     .descriptorCount = 1,
@@ -878,13 +915,23 @@ class Assignment final {
                     .pImageInfo = &descriptorImageInfo[0],
                     .pBufferInfo = nullptr,
                     .pTexelBufferView = nullptr
+                },
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .pNext = nullptr,
+                    .dstSet = m_descriptorSets[idx],
+                    .dstBinding = 1,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pImageInfo = nullptr,
+                    .pBufferInfo = &descriptorBufferInfo[0],
+                    .pTexelBufferView = nullptr
                 }
             };
             vkUpdateDescriptorSets(device, sizeof(writeDescriptorSet) / sizeof(writeDescriptorSet[0]), writeDescriptorSet, 0, nullptr);
+            idx++;
         }
-
-        // TODO: Assignment 2.12
-        // Write the uniform buffer in addition to the combined image sampler to the descriptor sets.
     }
 
     //--------------------------------------------------------------------------------------------------

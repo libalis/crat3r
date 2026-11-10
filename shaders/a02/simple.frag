@@ -13,6 +13,11 @@ layout(set = 0, binding = 0) uniform sampler2D textureSampler;
 // Add the binding for the material uniform buffer and, in case the material does not have a texture,
 // use the uniform base color instead.
 
+layout(set = 0, binding = 1) uniform MaterialUniformBuffer {
+    vec4 baseColor;
+    int hasTexture;
+} materialUniformBuffer;
+
 void main() {
-    outColor = texture(textureSampler, fragUv);
+    outColor = materialUniformBuffer.hasTexture != 0 ? texture(textureSampler, fragUv) : materialUniformBuffer.baseColor;
 }
