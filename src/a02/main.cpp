@@ -125,8 +125,6 @@ class Assignment final {
 
         // 2.8
         vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
-        vkDestroyImageView(device, m_textureImageView, nullptr);
-        m_textureImage.deinit(allocator);
         vkDestroySampler(device, m_textureSampler, nullptr);
         vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
 
@@ -136,6 +134,14 @@ class Assignment final {
         }
         for(auto& i : m_indexBuffer) {
             i.deinit(allocator);
+        }
+
+        // 2.10
+        for(auto& imageView: m_textureImageViews) {
+            vkDestroyImageView(device, imageView, nullptr);
+        }
+        for(auto& image : m_textureImages) {
+            image.deinit(allocator);
         }
 
         m_app.deinit();
@@ -160,8 +166,6 @@ class Assignment final {
 
     // 2.8
     VkDescriptorSetLayout m_descriptorSetLayout;
-    Image m_textureImage;
-    VkImageView m_textureImageView;
     VkSampler m_textureSampler;
     VkDescriptorPool m_descriptorPool;
     std::vector<VkDescriptorSet> m_descriptorSets;
@@ -170,6 +174,10 @@ class Assignment final {
     std::vector<Buffer> m_vertexBuffer;
     std::vector<Buffer> m_indexBuffer;
     std::vector<size_t> numIndices;
+
+    // 2.10
+    std::vector<Image> m_textureImages;
+    std::vector<VkImageView> m_textureImageViews;
 
   private:
     //--------------------------------------------------------------------------------------------------
@@ -705,52 +713,57 @@ class Assignment final {
         // the texture is given by 'texture.format'. You may use the utility function 'uploadImageWithStaging'.
         // Then create an image view for the texture image.
 
-        Scene::Texture firstTexture = m_scene.textures[0];
-
-        VkExtent3D extent = {
-            .width = firstTexture.width,
-            .height = firstTexture.height,
-            .depth = 1
-        };
-
-        m_textureImage = uploadImageWithStaging(firstTexture.data.data(),
-            firstTexture.data.size() * sizeof(uint8_t),
-            VK_IMAGE_TYPE_2D,
-            firstTexture.format,
-            extent,
-            VK_IMAGE_USAGE_SAMPLED_BIT,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-        const VkComponentMapping componentMapping{
-            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .a = VK_COMPONENT_SWIZZLE_IDENTITY
-        };
-
-        VkImageSubresourceRange imageSubresourceRange{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        };
-
-        const VkImageViewCreateInfo imageViewCreateInfo{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .image = m_textureImage.image,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = firstTexture.format,
-            .components = componentMapping,
-            .subresourceRange = imageSubresourceRange
-        };
-
-        VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &m_textureImageView));
-
         // TODO: Assignment 2.10
         // Now, create an image and view for each texture used in the scene.
+
+        m_textureImages.reserve(m_scene.textures.size());
+        m_textureImageViews.reserve(m_scene.textures.size());
+        for(auto& texture : m_scene.textures) {
+            VkExtent3D extent = {
+                .width = texture.width,
+                .height = texture.height,
+                .depth = 1
+            };
+
+            Image textureImage = uploadImageWithStaging(texture.data.data(),
+                texture.data.size() * sizeof(uint8_t),
+                VK_IMAGE_TYPE_2D,
+                texture.format,
+                extent,
+                VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_textureImages.push_back(textureImage);
+
+            const VkComponentMapping componentMapping{
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY
+            };
+
+            VkImageSubresourceRange imageSubresourceRange{
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            };
+
+            const VkImageViewCreateInfo imageViewCreateInfo{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .image = textureImage.image,
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = texture.format,
+                .components = componentMapping,
+                .subresourceRange = imageSubresourceRange
+            };
+
+            VkImageView textureImageView;
+            VK_CHECK(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &textureImageView));
+            m_textureImageViews.push_back(textureImageView);
+        }
     }
 
     void createTextureSampler() {
@@ -792,57 +805,64 @@ class Assignment final {
     }
 
     void createDescriptorPool() {
-        const uint32_t framesInFlight = 1;
         const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.8
         // Create a descriptor pool for one combined image sampler.
 
+        // TODO: Assignment 2.10
+        // Reserve enough space for as many descriptors and sets as there are materials (not textures!) in the scene.
+
         const VkDescriptorPoolSize descriptorPoolSize[]{
             {
                 .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .descriptorCount = framesInFlight
+                .descriptorCount = static_cast<uint32_t>(m_scene.materials.size())
             }
         };
 
         const VkDescriptorPoolCreateInfo descriptorPoolCreateInfo{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .maxSets = framesInFlight,
+            .maxSets = static_cast<uint32_t>(m_scene.materials.size()),
             .poolSizeCount = sizeof(descriptorPoolSize) / sizeof(descriptorPoolSize[0]),
             .pPoolSizes = descriptorPoolSize
         };
 
         VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool));
 
-        // TODO: Assignment 2.10
-        // Reserve enough space for as many descriptors and sets as there are materials (not textures!) in the scene.
-
         // TODO: Assignment 2.12
         // Additionally reserve enough space for one uniform buffer per material.
     }
 
     void createDescriptorSets() {
-        const uint32_t framesInFlight = 1;
         const VkDevice device = m_app.getDevice();
 
         // TODO: Assignment 2.8
         // Allocate a descriptor set and update it by writing the texture image and sampler to binding zero.
 
-        m_descriptorSets.resize(framesInFlight);
-        const std::vector<VkDescriptorSetLayout> descriptorSetLayouts{framesInFlight, m_descriptorSetLayout};
+        // TODO: Assignment 2.10
+        // Create a seperate descriptor set for each material. The index of the texure a material uses is given
+        // by 'material.texDiffuseIdx'. However, the texture index is optional, as some materials do not use a
+        // diffuse texture at all. You can use 'optional.has_value()' to check if a material index is defined.
+        // There are multiple ways to handle this. You would likely want different pipelines with other shaders
+        // for different materials in an actual renderer. Here, you can simply bind the first textures as a
+        // fallback if there is no texture defined.
+
+        m_descriptorSets.resize(m_scene.materials.size());
+        const std::vector<VkDescriptorSetLayout> descriptorSetLayouts{m_scene.materials.size(), m_descriptorSetLayout};
         const VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .pNext = nullptr,
             .descriptorPool = m_descriptorPool,
-            .descriptorSetCount = framesInFlight,
+            .descriptorSetCount = static_cast<uint32_t>(m_scene.materials.size()),
             .pSetLayouts = descriptorSetLayouts.data()
         };
         VK_CHECK(vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, m_descriptorSets.data()));
-        for (size_t i = 0; i < framesInFlight; i++) {
+        size_t idx = 0;
+        for(auto& material : m_scene.materials) {
             const VkDescriptorImageInfo descriptorImageInfo[]{
                 {
                     .sampler = m_textureSampler,
-                    .imageView = m_textureImageView,
+                    .imageView = material.texDiffuseIdx.has_value() ? m_textureImageViews[material.texDiffuseIdx.value()] : m_textureImageViews[0],
                     .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                 }
             };
@@ -850,7 +870,7 @@ class Assignment final {
                 {
                     .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .pNext = nullptr,
-                    .dstSet = m_descriptorSets[i],
+                    .dstSet = m_descriptorSets[idx++],
                     .dstBinding = 0,
                     .dstArrayElement = 0,
                     .descriptorCount = 1,
@@ -862,14 +882,6 @@ class Assignment final {
             };
             vkUpdateDescriptorSets(device, sizeof(writeDescriptorSet) / sizeof(writeDescriptorSet[0]), writeDescriptorSet, 0, nullptr);
         }
-
-        // TODO: Assignment 2.10
-        // Create a seperate descriptor set for each material. The index of the texure a material uses is given
-        // by 'material.texDiffuseIdx'. However, the texture index is optional, as some materials do not use a
-        // diffuse texture at all. You can use 'optional.has_value()' to check if a material index is defined.
-        // There are multiple ways to handle this. You would likely want different pipelines with other shaders
-        // for different materials in an actual renderer. Here, you can simply bind the first textures as a
-        // fallback if there is no texture defined.
 
         // TODO: Assignment 2.12
         // Write the uniform buffer in addition to the combined image sampler to the descriptor sets.
@@ -925,6 +937,10 @@ class Assignment final {
         // Remember that the node and mesh indices are not the same, as multiple nodes can reference the same mesh.
         // Then, submit a draw call for each node, using the correct number of indices.
 
+        // TODO: Assignment 2.10
+        // Bind the descriptor set corresponding to the material of the mesh of the current node before submitting
+        // the draw calls.
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -966,15 +982,6 @@ class Assignment final {
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-        vkCmdBindDescriptorSets(commandBuffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_pipelineLayout,
-            0,
-            m_descriptorSets.size(),
-            m_descriptorSets.data(),
-            0,
-            nullptr);
-
         const VkDeviceSize offset = 0;
         const glm::mat4 viewProjection = m_app.getProjMat() * m_app.getViewMat();
 
@@ -984,16 +991,21 @@ class Assignment final {
             };
             vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
 
+            vkCmdBindDescriptorSets(commandBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_pipelineLayout,
+                0,
+                1,
+                &m_descriptorSets[m_scene.meshes[meshIdx].materialIdx],
+                0,
+                nullptr);
+
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer[meshIdx].buffer, &offset);
             vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer[meshIdx].buffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(numIndices[meshIdx]), 1, 0, 0, 0);
         });
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.10
-        // Bind the descriptor set corresponding to the material of the mesh of the current node before submitting
-        // the draw calls.
 
         // TODO: Assignment 2.11
         // When making the draw calls, first draw all the opaque meshes, then all teh transparent meshes. A
