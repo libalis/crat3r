@@ -485,13 +485,17 @@ class Assignment final {
             .alphaToOneEnable = VK_FALSE
         };
 
+        // TODO: Assignment 2.11
+        // Enable color blending for this pipeline. Set the blend operations and factors for standard
+        // alpha blending.
+
         const VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState{
-            .blendEnable = VK_FALSE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE,
+            .blendEnable = VK_TRUE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
             .colorBlendOp = VK_BLEND_OP_ADD,
             .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
             .alphaBlendOp = VK_BLEND_OP_ADD,
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
         };
@@ -554,10 +558,6 @@ class Assignment final {
         };
 
         VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &m_pipeline));
-
-        // TODO: Assignment 2.11
-        // Enable color blending for this pipeline. Set the blend operations and factors for standard
-        // alpha blending.
 
         vkDestroyShaderModule(m_app.getDevice(), fragShaderModule, nullptr);
         vkDestroyShaderModule(m_app.getDevice(), vertShaderModule, nullptr);
@@ -941,6 +941,11 @@ class Assignment final {
         // Bind the descriptor set corresponding to the material of the mesh of the current node before submitting
         // the draw calls.
 
+        // TODO: Assignment 2.11
+        // When making the draw calls, first draw all the opaque meshes, then all the transparent meshes. A
+        // material stores whether it is transparent in the 'material.alphaMode' (Scene::Material::AlphaMode::Opaque)
+        // field. You might want to extract everything corresponding to a draw call into a seperate function.
+
         const VkRect2D scissor{
             .offset = {0, 0},
             .extent = extent
@@ -985,32 +990,32 @@ class Assignment final {
         const VkDeviceSize offset = 0;
         const glm::mat4 viewProjection = m_app.getProjMat() * m_app.getViewMat();
 
-        m_scene.traverseNodes([&](const glm::mat4& transform, uint32_t meshIdx) {
-            const VertexPushConstants vertexPushConstants = {
-                .MVP = viewProjection * transform
-            };
-            vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
+        for(size_t i = 0; i < 2; i++) {
+            m_scene.traverseNodes([&](const glm::mat4& transform, uint32_t meshIdx) {
+                if(i == 0 && m_scene.materials[m_scene.meshes[meshIdx].materialIdx].alphaMode != Scene::Material::AlphaMode::Opaque) return;
+                if(i == 1 && m_scene.materials[m_scene.meshes[meshIdx].materialIdx].alphaMode == Scene::Material::AlphaMode::Opaque) return;
 
-            vkCmdBindDescriptorSets(commandBuffer,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_pipelineLayout,
-                0,
-                1,
-                &m_descriptorSets[m_scene.meshes[meshIdx].materialIdx],
-                0,
-                nullptr);
+                const VertexPushConstants vertexPushConstants = {
+                    .MVP = viewProjection * transform
+                };
+                vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
 
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer[meshIdx].buffer, &offset);
-            vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer[meshIdx].buffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(numIndices[meshIdx]), 1, 0, 0, 0);
-        });
+                vkCmdBindDescriptorSets(commandBuffer,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_pipelineLayout,
+                    0,
+                    1,
+                    &m_descriptorSets[m_scene.meshes[meshIdx].materialIdx],
+                    0,
+                    nullptr);
+
+                vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer[meshIdx].buffer, &offset);
+                vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer[meshIdx].buffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(numIndices[meshIdx]), 1, 0, 0, 0);
+            });
+        }
 
         vkCmdEndRenderPass(commandBuffer);
-
-        // TODO: Assignment 2.11
-        // When making the draw calls, first draw all the opaque meshes, then all teh transparent meshes. A
-        // material stores whether it is transparent in the 'material.alphaMode' (Scene::Material::AlphaMode::Opaque)
-        // field. You might want to extract everything corresponding to a draw call into a seperate function.
     }
 
 
