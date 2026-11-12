@@ -936,6 +936,35 @@ class Assignment final {
 
     //--------------------------------------------------------------------------------------------------
 
+    typedef struct {
+        uint32_t meshIdx;
+        VertexPushConstants vertexPushConstants;
+        float depth;
+    } MeshToDraw;
+
+    void drawMeshes(VkCommandBuffer commandBuffer, std::vector<MeshToDraw> meshes) {
+        const VkDeviceSize offset = 0;
+        for(const auto& mesh : meshes) {
+            const uint32_t meshIdx = mesh.meshIdx;
+            const VertexPushConstants vertexPushConstants = mesh.vertexPushConstants;
+
+            vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
+
+            vkCmdBindDescriptorSets(commandBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_pipelineLayout,
+                0,
+                1,
+                &m_descriptorSets[m_scene.meshes[meshIdx].materialIdx],
+                0,
+                nullptr);
+
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer[meshIdx].buffer, &offset);
+            vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer[meshIdx].buffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(numIndices[meshIdx]), 1, 0, 0, 0);
+        }
+    }
+
     void recordCommandBuffer(VkCommandBuffer commandBuffer) {
         const uint32_t currentFrame = m_app.getSwapchain().getCurrentFrameIdx();
         const VkExtent2D extent = m_app.getRenderTargetExtent();
@@ -1034,33 +1063,49 @@ class Assignment final {
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-        const VkDeviceSize offset = 0;
         const glm::mat4 viewProjection = m_app.getProjMat() * m_app.getViewMat();
 
-        for(size_t i = 0; i < 2; i++) {
-            m_scene.traverseNodes([&](const glm::mat4& transform, uint32_t meshIdx) {
-                if(i == 0 && m_scene.materials[m_scene.meshes[meshIdx].materialIdx].alphaMode != Scene::Material::AlphaMode::Opaque) return;
-                if(i == 1 && m_scene.materials[m_scene.meshes[meshIdx].materialIdx].alphaMode == Scene::Material::AlphaMode::Opaque) return;
+        std::vector<MeshToDraw> opaque_meshes{};
+        // leaves
+        std::vector<MeshToDraw> mask_meshes{};
+        // windows
+        std::vector<MeshToDraw> transparent_meshes{};
 
-                const VertexPushConstants vertexPushConstants = {
-                    .MVP = viewProjection * transform
-                };
-                vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VertexPushConstants), &vertexPushConstants.MVP);
+        m_scene.traverseNodes([&](const glm::mat4& transform, uint32_t meshIdx) {
+            const VertexPushConstants vertexPushConstants = {
+                .MVP = viewProjection * transform
+            };
 
-                vkCmdBindDescriptorSets(commandBuffer,
-                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_pipelineLayout,
-                    0,
-                    1,
-                    &m_descriptorSets[m_scene.meshes[meshIdx].materialIdx],
-                    0,
-                    nullptr);
+            // m_app.getViewMat() * transform: view space
+            // glm::vec4(0.f, 0.f, 0.f, 1.f): origin
+            // => view position
+            const float depth = (m_app.getViewMat() * transform * glm::vec4(0.f, 0.f, 0.f, 1.f)).z;
 
-                vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer[meshIdx].buffer, &offset);
-                vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer[meshIdx].buffer, 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(numIndices[meshIdx]), 1, 0, 0, 0);
-            });
-        }
+            const MeshToDraw mesh = {
+                .meshIdx = meshIdx,
+                .vertexPushConstants = vertexPushConstants,
+                .depth = depth
+            };
+
+            if(m_scene.materials[m_scene.meshes[meshIdx].materialIdx].alphaMode == Scene::Material::AlphaMode::Opaque) {
+                opaque_meshes.push_back(mesh);
+            } else if(m_scene.materials[m_scene.meshes[meshIdx].materialIdx].alphaMode == Scene::Material::AlphaMode::Mask) {
+                mask_meshes.push_back(mesh);
+            } else {
+                transparent_meshes.push_back(mesh);
+            }
+        });
+
+        drawMeshes(commandBuffer, opaque_meshes);
+
+        drawMeshes(commandBuffer, mask_meshes);
+
+        // farthest first
+        std::sort(transparent_meshes.begin(), transparent_meshes.end(), [](const MeshToDraw& a, const MeshToDraw& b) {
+            return a.depth < b.depth;
+        });
+
+        drawMeshes(commandBuffer, transparent_meshes);
 
         vkCmdEndRenderPass(commandBuffer);
     }

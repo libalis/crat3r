@@ -19,5 +19,8 @@ layout(set = 0, binding = 1) uniform MaterialUniformBuffer {
 } materialUniformBuffer;
 
 void main() {
+    if(materialUniformBuffer.hasTexture != 0 && texture(textureSampler, fragUv).a == 0.f ||
+       materialUniformBuffer.hasTexture == 0 && materialUniformBuffer.baseColor.a == 0.f)
+        discard;
     outColor = materialUniformBuffer.hasTexture != 0 ? texture(textureSampler, fragUv) : materialUniformBuffer.baseColor;
 }
