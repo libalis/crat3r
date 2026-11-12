@@ -58,7 +58,8 @@ struct Image final {
         VkFormat format,
         VkImageLayout oldLayout,
         VkImageLayout newLayout,
-        uint32_t mipLevels = 1
+        uint32_t mipLevels = 1,
+        uint32_t mipLevel = 0
     ) {
         VkAccessFlags srcAccessMask;
         VkAccessFlags dstAccessMask;
@@ -74,6 +75,10 @@ struct Image final {
             srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             break;
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            break;
         case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
             srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
             srcStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
@@ -86,6 +91,10 @@ struct Image final {
         switch (newLayout) {
         case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
             dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
             dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             break;
         case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
@@ -103,7 +112,7 @@ struct Image final {
 
         const VkImageSubresourceRange subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
+            .baseMipLevel = mipLevel,
             .levelCount = mipLevels,
             .baseArrayLayer = 0,
             .layerCount = 1,
