@@ -742,7 +742,8 @@ class Assignment final {
                 texture.format,
                 extent,
                 VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                texture.mipLevels);
             m_textureImages.push_back(textureImage);
 
             const VkComponentMapping componentMapping{
@@ -755,7 +756,7 @@ class Assignment final {
             VkImageSubresourceRange imageSubresourceRange{
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
-                .levelCount = 1,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
                 .baseArrayLayer = 0,
                 .layerCount = 1
             };
@@ -783,19 +784,25 @@ class Assignment final {
         // TODO: Assignment 2.8
         // Create a sampler for textures with linear minification and magnification.
 
+        VkPhysicalDeviceFeatures supportedFeatures;
+        vkGetPhysicalDeviceFeatures(m_app.getPhysicalDevice(), &supportedFeatures);
+
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(m_app.getPhysicalDevice(), &deviceProperties);
+
         VkSamplerCreateInfo samplerCreateInfo{
             .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
             .magFilter = VK_FILTER_LINEAR,
             .minFilter = VK_FILTER_LINEAR,
-            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
             .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
             .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
             .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
             .mipLodBias = 0.0f,
-            .anisotropyEnable = VK_FALSE,
-            .maxAnisotropy = 0.0f,
+            .anisotropyEnable = supportedFeatures.samplerAnisotropy,
+            .maxAnisotropy = supportedFeatures.samplerAnisotropy ? deviceProperties.limits.maxSamplerAnisotropy : 1.f,
             .compareEnable = VK_FALSE,
             .compareOp = VK_COMPARE_OP_NEVER,
             .minLod = 0.0f,
@@ -1167,7 +1174,8 @@ class Assignment final {
         VkFormat format,
         VkExtent3D extent,
         VkImageUsageFlags usage,
-        VkImageLayout finalLayout
+        VkImageLayout finalLayout,
+        uint32_t mipLevels = 1
     ) {
         const VmaAllocator allocator = m_app.getAllocator();
 
@@ -1192,13 +1200,13 @@ class Assignment final {
             extent,
             VK_SAMPLE_COUNT_1_BIT,
             VK_IMAGE_TILING_OPTIMAL,
-            usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-        );
+            usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            mipLevels);
 
         VK_CHECK(m_app.executeSingleTimeCommand([&](VkCommandBuffer commandBuffer) {
             const auto transferLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            resultImage.transitionLayout(commandBuffer, format, VK_IMAGE_LAYOUT_UNDEFINED, transferLayout);
+            resultImage.transitionLayout(commandBuffer, format, VK_IMAGE_LAYOUT_UNDEFINED, transferLayout, mipLevels);
 
             const VkBufferImageCopy region{
                 .bufferOffset = 0,
@@ -1210,7 +1218,37 @@ class Assignment final {
             };
             vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.buffer, resultImage.image, transferLayout, 1, &region);
 
-            resultImage.transitionLayout(commandBuffer, format, transferLayout, finalLayout);
+            int32_t mipWidth  = static_cast<int32_t>(extent.width);
+            int32_t mipHeight = static_cast<int32_t>(extent.height);
+            int32_t mipDepth  = static_cast<int32_t>(extent.depth);
+
+            for(uint32_t mipLevel = 1; mipLevel < mipLevels; mipLevel++) {
+                const int32_t nextWidth  = std::max(1, mipWidth / 2);
+                const int32_t nextHeight = std::max(1, mipHeight / 2);
+                const int32_t nextDepth  = std::max(1, mipDepth / 2);
+
+                const VkImageBlit blit {
+                    .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mipLevel - 1, 0, 1},
+                    .srcOffsets = {{0, 0, 0}, {mipWidth, mipHeight, mipDepth}},
+                    .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mipLevel, 0, 1},
+                    .dstOffsets = {{0, 0, 0}, {nextWidth, nextHeight, nextDepth}},
+                };
+
+                resultImage.transitionLayout(commandBuffer, format, transferLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, mipLevel - 1);
+
+                vkCmdBlitImage(commandBuffer,
+                    resultImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    resultImage.image, transferLayout,
+                    1, &blit, VK_FILTER_LINEAR);
+
+                resultImage.transitionLayout(commandBuffer, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, finalLayout, 1, mipLevel - 1);
+
+                mipWidth  = nextWidth;
+                mipHeight = nextHeight;
+                mipDepth  = nextDepth;
+            }
+
+            resultImage.transitionLayout(commandBuffer, format, transferLayout, finalLayout, 1, mipLevels - 1);
         }));
 
         stagingBuffer.deinit(allocator);
