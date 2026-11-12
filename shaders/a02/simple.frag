@@ -16,8 +16,17 @@ layout(set = 0, binding = 0) uniform sampler2D textureSampler;
 layout(set = 0, binding = 1) uniform MaterialUniformBuffer {
     vec4 baseColor;
     int hasTexture;
+    float alphaCutoff;
 } materialUniformBuffer;
 
 void main() {
-    outColor = materialUniformBuffer.hasTexture != 0 ? texture(textureSampler, fragUv) : materialUniformBuffer.baseColor;
+    if(materialUniformBuffer.hasTexture != 0) {
+        vec4 texColor = texture(textureSampler, fragUv);
+        if(texColor.a <= min(materialUniformBuffer.alphaCutoff, .25f)) {
+            discard;
+        }
+        outColor = texColor;
+    } else {
+        outColor = materialUniformBuffer.baseColor;
+    }
 }
