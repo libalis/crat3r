@@ -13,14 +13,24 @@
 
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec2 inUv;
+layout(location = 2) in vec3 inNormal;
 
 layout(location = 0) out vec2 fragUv;
+layout(location = 1) out vec3 outNormal;
+layout(location = 2) out vec3 worldPosition;
 
 layout(push_constant) uniform PushConstants {
-  mat4 mvp;
+  mat4 model;
+  mat4 normal;
 } pc;
 
+layout(set = 1, binding = 0) uniform UniformBuffer {
+  mat4 VP;
+} ubo;
+
 void main() {
-  gl_Position = pc.mvp * vec4(inPos, 1.);
+  gl_Position = ubo.VP * pc.model * vec4(inPos, 1.);
   fragUv = inUv;
+  outNormal = (pc.normal * vec4(inNormal, 0.)).xyz;
+  worldPosition = (pc.model * vec4(inPos, 1.)).xyz;
 }

@@ -36,6 +36,8 @@
 // For point lights, first declare a light struct and add the array of point lights to the uniform buffer.
 
 layout(location = 0) in vec2 fragUv;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec3 worldPosition;
 
 layout(location = 0) out vec4 outColor;
 
@@ -51,4 +53,6 @@ const float INV_PI = 0.31831015504887652430775499030746;
 
 void main() {
   outColor = (ubo.hasTexture != 0) ? texture(texSampler, fragUv) : ubo.baseColor;
+  outColor = vec4(normalize(inNormal), 1.);
+  outColor = vec4(worldPosition, 1.);
 }

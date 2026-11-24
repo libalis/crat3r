@@ -71,7 +71,8 @@ constexpr VkSampleCountFlagBits MSAA_SAMPLES = VK_SAMPLE_COUNT_8_BIT;
 // Modify these structs and add new ones as necessary.
 
 struct VertexPushConstants {
-    glm::mat4 MVP;
+    glm::mat4 model;
+    glm::mat4 normal;
 };
 
 struct MaterialUniformBuffer {
@@ -79,6 +80,10 @@ struct MaterialUniformBuffer {
     int32_t hasTexture;
 };
 
+// 3.1
+struct FrameUniformBuffer {
+    glm::mat4 VP;
+};
 
 //--------------------------------------------------------------------------------------------------
 
@@ -183,6 +188,14 @@ class Assignment final {
 
         // TODO: Assignment 3.x
         // Destroy and free any ressources you have created.
+
+        // 3.1
+        vkDestroyDescriptorSetLayout(device, m_frameDescriptorSetLayout, nullptr);
+        for(size_t i = 0; i < m_frameUniformBuffers.size(); i++) {
+            vmaUnmapMemory(allocator, m_frameUniformBuffers[i].allocation);
+            m_frameUniformBuffers[i].deinit(allocator);
+        }
+
         m_app.deinit();
     }
 
@@ -213,6 +226,12 @@ class Assignment final {
 
     // TODO: Assignment 3.x
     // Add any other necessary class members here.
+
+    // 3.1
+    VkDescriptorSetLayout m_frameDescriptorSetLayout;
+    std::vector<Buffer> m_frameUniformBuffers;
+    std::vector<void*> m_frameUniformBuffersData;
+    std::vector<VkDescriptorSet> m_frameDescriptorSets;
 
     struct TransparentNode {
         glm::mat4 transform;
@@ -345,6 +364,21 @@ class Assignment final {
         // TODO: Assignment 3.1
         // Create a descriptor set layout for one uniform buffer at binding zero in the vertex shader.
 
+        const std::array layoutBindings = {
+            VkDescriptorSetLayoutBinding{
+                .binding = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            }
+        };
+        const VkDescriptorSetLayoutCreateInfo layoutInfo{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = layoutBindings.size(),
+            .pBindings = layoutBindings.data(),
+        };
+        VK_CHECK(vkCreateDescriptorSetLayout(m_app.getDevice(), &layoutInfo, nullptr, &m_frameDescriptorSetLayout));
+
         // TODO: Assignment 3.2
         // Add a second binding for a uniform buffer for the fragment stage.
 
@@ -362,7 +396,10 @@ class Assignment final {
             .size = sizeof(VertexPushConstants),
         };
 
-        const std::array setLayouts{m_materialDescriptorSetLayout};
+        const std::array setLayouts{
+            m_materialDescriptorSetLayout,
+            m_frameDescriptorSetLayout
+        };
 
         const VkPipelineLayoutCreateInfo pipelineLayoutInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -441,6 +478,12 @@ class Assignment final {
                 .format = VK_FORMAT_R32G32_SFLOAT,
                 .offset = offsetof(Scene::Vertex, uv),
             },
+            VkVertexInputAttributeDescription{
+                .location = 2,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = offsetof(Scene::Vertex, normal)
+            }
         };
 
         const VkPipelineVertexInputStateCreateInfo vertexInputInfo{
@@ -764,6 +807,19 @@ class Assignment final {
         // and map them to CPU memory.
 
         const uint32_t framesInFlight = m_app.getSwapchain().getMaxFramesInFlight();
+        const VmaAllocator allocator = m_app.getAllocator();
+
+        m_frameUniformBuffers.resize(framesInFlight);
+        m_frameUniformBuffersData.resize(framesInFlight);
+        for(size_t i = 0; i < framesInFlight; i++) {
+            VK_CHECK(m_frameUniformBuffers[i].init(
+                allocator,
+                sizeof(FrameUniformBuffer),
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+            ));
+            VK_CHECK(vmaMapMemory(allocator, m_frameUniformBuffers[i].allocation, &m_frameUniformBuffersData[i]));
+        }
     }
 
     void createDescriptorPool() {
@@ -773,7 +829,7 @@ class Assignment final {
         const std::array poolSizes = {
             VkDescriptorPoolSize{
                 .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .descriptorCount = numMaterials,
+                .descriptorCount = numMaterials + framesInFlight,
             },
             VkDescriptorPoolSize{
                 .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -783,7 +839,7 @@ class Assignment final {
 
         const VkDescriptorPoolCreateInfo poolInfo{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .maxSets = numMaterials,
+            .maxSets = numMaterials + framesInFlight,
             .poolSizeCount = poolSizes.size(),
             .pPoolSizes = poolSizes.data(),
         };
@@ -847,8 +903,39 @@ class Assignment final {
     }
 
     void createFrameDescriptorSets() {
+        const uint32_t framesInFlight = m_app.getSwapchain().getMaxFramesInFlight();
+
         // TODO: Assignment 3.1
         // Allocate the per-frame descriptor sets and write the uniform buffers to them.
+
+        const std::vector<VkDescriptorSetLayout> layouts(framesInFlight, m_frameDescriptorSetLayout);
+        const VkDescriptorSetAllocateInfo allocInfo{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = m_descriptorPool,
+            .descriptorSetCount = framesInFlight,
+            .pSetLayouts = layouts.data()
+        };
+        m_frameDescriptorSets.resize(framesInFlight);
+        VK_CHECK(vkAllocateDescriptorSets(m_app.getDevice(), &allocInfo, m_frameDescriptorSets.data()));
+        for(uint32_t i = 0; i < framesInFlight; i++) {
+            const VkDescriptorBufferInfo bufferInfo{
+                .buffer = m_frameUniformBuffers[i].buffer,
+                .offset = 0,
+                .range = VK_WHOLE_SIZE
+            };
+            const std::array descriptorWrites = {
+                VkWriteDescriptorSet{
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = m_frameDescriptorSets[i],
+                    .dstBinding = 0,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pBufferInfo = &bufferInfo
+                }
+            };
+            vkUpdateDescriptorSets(m_app.getDevice(), descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+        }
 
         // TODO: Assignment 3.2
         // Update the descriptor writes so that the vertex descriptor only covers the view-projection matrix
@@ -857,8 +944,6 @@ class Assignment final {
 
         // TODO: Assignment 3.4
         // Write the shadow map to the descriptor sets.
-
-        const uint32_t framesInFlight = m_app.getSwapchain().getMaxFramesInFlight();
     }
 
     //--------------------------------------------------------------------------------------------------
@@ -882,6 +967,17 @@ class Assignment final {
 
         const uint32_t currentFrame = m_app.getSwapchain().getCurrentFrameIdx();
         const VkExtent2D extent = m_app.getRenderTargetExtent();
+
+        vkCmdBindDescriptorSets(
+            commandBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_pipelineLayout,
+            1,
+            1,
+            &m_frameDescriptorSets[currentFrame],
+            0,
+            nullptr
+        );
 
         updateFrameUniformBuffer(currentFrame);
 
@@ -964,7 +1060,10 @@ class Assignment final {
         const size_t numIndices = mesh.indices.size();
         const uint32_t materialIdx = mesh.materialIdx;
 
-        const VertexPushConstants pc{.MVP = viewProj * model};
+        const VertexPushConstants pc{
+            .model = model,
+            .normal = glm::mat4(glm::inverseTranspose(glm::mat3(model)))
+        };
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
         vkCmdBindDescriptorSets(
@@ -989,6 +1088,9 @@ class Assignment final {
     void updateFrameUniformBuffer(uint32_t currentFrame) {
         // TODO: Assignment 3.1
         // Write the view-projection matrix to the uniform buffer of the current frame.
+
+        FrameUniformBuffer* frameUniformBuffer = static_cast<FrameUniformBuffer*>(m_frameUniformBuffersData[currentFrame]);
+        frameUniformBuffer->VP = m_app.getProjMat() * m_app.getViewMat();
 
         // TODO: Assignment 3.2
         // Write the camera position, the sun's direction, color, and intensity, as well as the ambient
