@@ -3,6 +3,7 @@
 #include <volk.h>
 
 #include <cassert>
+#include <memory>
 #include <vector>
 
 //--------------------------------------------------------------------------------------------------
@@ -35,6 +36,13 @@ struct QueueInfo {
     VkQueue queue = VK_NULL_HANDLE; // The queue object
 };
 
+struct FeaturesInfo {
+    VkPhysicalDeviceFeatures2 features{};
+    VkPhysicalDeviceVulkan11Features features11{};
+    VkPhysicalDeviceVulkan12Features features12{};
+    VkPhysicalDeviceVulkan13Features features13{};
+};
+
 //--------------------------------------------------------------------------------------------------
 
 class Context final {
@@ -65,6 +73,8 @@ class Context final {
     VkInstance m_instance = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     VkDevice m_device = VK_NULL_HANDLE;
+
+    std::unique_ptr<FeaturesInfo> m_features{};
 
     std::vector<QueueInfo> m_queueInfos{};
     std::vector<VkDeviceQueueCreateInfo> m_queueCreateInfos{};

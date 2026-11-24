@@ -155,8 +155,6 @@ static inline const char* string_VkMemoryHeapFlagBits(VkMemoryHeapFlagBits input
             return "VK_MEMORY_HEAP_DEVICE_LOCAL_BIT";
         case VK_MEMORY_HEAP_MULTI_INSTANCE_BIT:
             return "VK_MEMORY_HEAP_MULTI_INSTANCE_BIT";
-        case VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM:
-            return "VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM";
         default:
             return "Unhandled VkMemoryHeapFlagBits";
     }

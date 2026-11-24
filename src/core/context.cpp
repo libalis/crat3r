@@ -4,12 +4,12 @@
 #include "vk_string.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <iostream>
+#include <vulkan/vulkan_core.h>
 
 //--------------------------------------------------------------------------------------------------
 
@@ -81,11 +81,40 @@ VkResult Context::createInstance(const ContextInitInfo& info) {
         .apiVersion = info.apiVersion,
     };
 
-    std::vector<const char*> layers;
+    std::vector<const char*> layers{};
     std::vector<const char*> extensions = info.instanceExtensions;
 
     if (info.enableValidationLayers) {
-        layers.push_back("VK_LAYER_KHRONOS_validation");
+        const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+
+        uint32_t layerCount = 0;
+        VK_CHECK_RETURN(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        VK_CHECK_RETURN(vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data()));
+
+        bool validationLayerFound = false;
+        for (const auto& layer : availableLayers) {
+            if (std::strcmp(layer.layerName, validationLayer) == 0) {
+                validationLayerFound = true;
+                break;
+            }
+        }
+
+        if (validationLayerFound) {
+            layers.push_back("VK_LAYER_KHRONOS_validation");
+        } else {
+            fprintf(
+                stderr,
+                "\u001B[31m"
+                "-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-\n"
+                "Warning: Validation layers requested, but '%s' is not available.\n"
+                "Continuing without validation.\n"
+                "-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-\n"
+                "\u001B[0m",
+                validationLayer
+            );
+        }
+
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
@@ -283,6 +312,17 @@ static VkResult checkDeviceExtensionSupport(VkPhysicalDevice device, const Conte
 }
 
 VkResult Context::createDevice(const ContextInitInfo& info) {
+    m_features = std::make_unique<FeaturesInfo>();
+    m_features->features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    m_features->features.pNext = &m_features->features11;
+    m_features->features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    m_features->features11.pNext = &m_features->features12;
+    m_features->features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    m_features->features12.pNext = &m_features->features13;
+    m_features->features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    m_features->features13.pNext = nullptr;
+    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &m_features->features);
+
     VK_CHECK_RETURN(checkDeviceExtensionSupport(m_physicalDevice, info));
 
     VkPhysicalDeviceVulkan13Features deviceFeatures13{
@@ -300,15 +340,10 @@ VkResult Context::createDevice(const ContextInitInfo& info) {
         .bufferDeviceAddress = VK_TRUE,
     };
 
-    VkPhysicalDeviceFeatures supportedFeatures{};
-    vkGetPhysicalDeviceFeatures(m_physicalDevice, &supportedFeatures);
-
-    std::cout << "Anisotropy: " << (supportedFeatures.samplerAnisotropy == VK_TRUE ? "VK_TRUE" : "VK_FALSE") << std::endl;
-
     VkPhysicalDeviceFeatures2 deviceFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &deviceFeatures12,
-        .features = {.samplerAnisotropy = supportedFeatures.samplerAnisotropy, .shaderInt64 = VK_TRUE},
+        .features = {.shaderInt64 = VK_TRUE},
     };
 
     VkBaseInStructure* pNextChain = reinterpret_cast<VkBaseInStructure*>(&deviceFeatures13);
